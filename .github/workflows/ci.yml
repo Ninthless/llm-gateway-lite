@@ -39,7 +39,7 @@ jobs:
           exit 1
       - run: curl --fail --silent http://127.0.0.1:3029/ui/
       - run: curl --fail --silent http://127.0.0.1:3029/health/liveliness
-      - run: test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:3029/cursor)" = "401"
+      - run: test "$(curl --location --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:3029/cursor/)" = "401"
       - if: always()
         run: docker compose down -v
 
