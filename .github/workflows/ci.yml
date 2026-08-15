@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node --check web/site/app.js
+      - run: node tests/check-static.mjs
+      - run: docker build -t api2cursor-next-web ./web
+      - run: cp .env.example .env
+      - run: docker compose config --quiet
+
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - run: cp .env.example .env
+      - run: docker compose up -d --build
+      - run: |
+          for attempt in $(seq 1 36); do
+            if curl --fail --silent http://127.0.0.1:3029/health/readiness >/dev/null; then
+              exit 0
+            fi
+            sleep 5
+          done
+          docker compose logs
+          exit 1
+      - run: curl --fail --silent http://127.0.0.1:3029/ | grep "API2Cursor Next"
+      - run: curl --fail --silent http://127.0.0.1:3029/health/liveliness
+      - if: always()
+        run: docker compose down -v

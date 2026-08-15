@@ -1,0 +1,392 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #0c1117;
+  color: #e8edf2;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  margin: 0;
+  background: #0c1117;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font: inherit;
+}
+
+.topbar,
+main,
+footer {
+  width: min(1080px, calc(100% - 40px));
+  margin-inline: auto;
+}
+
+.topbar {
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #27313b;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.brand-mark {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: #e8edf2;
+  color: #0c1117;
+  font-size: 11px;
+}
+
+nav {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  color: #9ba8b5;
+  font-size: 13px;
+}
+
+nav a:hover,
+nav a:focus-visible {
+  color: #ffffff;
+}
+
+main {
+  padding-block: 76px 48px;
+}
+
+.overview {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 32px;
+  padding-bottom: 52px;
+}
+
+.eyebrow,
+.step {
+  margin: 0 0 10px;
+  color: #4ade80;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+h1,
+h2,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  margin-bottom: 16px;
+  font-size: clamp(38px, 6vw, 64px);
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.summary {
+  max-width: 620px;
+  margin-bottom: 0;
+  color: #9ba8b5;
+  font-size: 17px;
+  line-height: 1.7;
+}
+
+.health {
+  min-width: 178px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-bottom: 7px;
+  color: #9ba8b5;
+  font-size: 13px;
+}
+
+.health-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #fbbf24;
+}
+
+.health-dot.ready {
+  background: #4ade80;
+}
+
+.health-dot.failed {
+  background: #f87171;
+}
+
+.icon-button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  margin-left: auto;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #9ba8b5;
+  cursor: pointer;
+}
+
+.icon-button:hover,
+.icon-button:focus-visible {
+  background: #192129;
+  color: #ffffff;
+}
+
+.setup,
+.workflow {
+  border-top: 1px solid #27313b;
+  padding-block: 34px 46px;
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+
+h2 {
+  margin-bottom: 0;
+  font-size: 22px;
+  letter-spacing: 0;
+}
+
+.primary-action,
+.copy-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  border: 1px solid #d6dde4;
+  border-radius: 6px;
+  background: #e8edf2;
+  color: #0c1117;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.primary-action {
+  padding-inline: 16px;
+}
+
+.primary-action:hover,
+.primary-action:focus-visible,
+.copy-button:hover,
+.copy-button:focus-visible {
+  background: #ffffff;
+}
+
+.fields {
+  border: 1px solid #27313b;
+  border-radius: 8px;
+  background: #111820;
+}
+
+.field {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(0, 1.6fr);
+  align-items: center;
+  gap: 24px;
+  min-height: 72px;
+  padding: 14px 16px 14px 20px;
+}
+
+.field + .field {
+  border-top: 1px solid #27313b;
+}
+
+.field label,
+.field-label {
+  color: #9ba8b5;
+  font-size: 13px;
+}
+
+.value-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #e8edf2;
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 13px;
+}
+
+.copy-button {
+  min-width: 58px;
+  min-height: 32px;
+  padding-inline: 12px;
+}
+
+.text-action {
+  flex: 0 0 auto;
+  color: #6ee7a0;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.text-action:hover,
+.text-action:focus-visible {
+  color: #a7f3c1;
+}
+
+.workflow ol {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: #27313b;
+  border: 1px solid #27313b;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.workflow li {
+  min-height: 150px;
+  display: flex;
+  gap: 16px;
+  padding: 24px;
+  background: #111820;
+}
+
+.workflow li > span {
+  color: #4ade80;
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+}
+
+.workflow strong {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.workflow p {
+  margin-bottom: 0;
+  color: #8996a3;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+footer {
+  min-height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid #27313b;
+  color: #697684;
+  font-size: 12px;
+}
+
+.toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  transform: translateY(20px);
+  padding: 10px 14px;
+  border: 1px solid #34414d;
+  border-radius: 6px;
+  background: #192129;
+  color: #e8edf2;
+  font-size: 13px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.toast.visible {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+@media (max-width: 720px) {
+  .topbar,
+  main,
+  footer {
+    width: min(100% - 28px, 1080px);
+  }
+
+  nav {
+    gap: 14px;
+  }
+
+  nav a:nth-child(2) {
+    display: none;
+  }
+
+  main {
+    padding-top: 52px;
+  }
+
+  .overview {
+    align-items: flex-start;
+    flex-direction: column;
+    padding-bottom: 40px;
+  }
+
+  .health {
+    width: 100%;
+  }
+
+  .section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .field {
+    grid-template-columns: 1fr;
+    gap: 9px;
+    padding-block: 18px;
+  }
+
+  .workflow ol {
+    grid-template-columns: 1fr;
+  }
+
+  .workflow li {
+    min-height: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    transition: none;
+  }
+}
