@@ -1,24 +1,14 @@
 services:
-  web:
-    build: ./web
-    ports:
-      - "3029:80"
-    depends_on:
-      litellm:
-        condition: service_healthy
-    restart: unless-stopped
-
   litellm:
-    image: ghcr.io/berriai/litellm-database:v1.97.0-rc.1
-    command: ["--config", "/app/config.yaml", "--port", "4000", "--num_workers", "1"]
+    build: ./litellm
+    ports:
+      - "3029:4000"
     environment:
       DATABASE_URL: postgresql://litellm:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/litellm
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY is required}
       LITELLM_SALT_KEY: ${LITELLM_SALT_KEY:?LITELLM_SALT_KEY is required}
       PROXY_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3029}
       STORE_MODEL_IN_DB: "True"
-    volumes:
-      - ./litellm/config.yaml:/app/config.yaml:ro
     depends_on:
       db:
         condition: service_healthy

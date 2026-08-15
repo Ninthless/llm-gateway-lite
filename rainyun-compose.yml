@@ -1,0 +1,25 @@
+services:
+  litellm:
+    image: ghcr.io/ninthless/api2cursor-next-litellm:latest
+    environment:
+      DATABASE_URL: postgresql://litellm:${POSTGRES_PASSWORD}@${rca_svc_db_postgres}/litellm
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      LITELLM_SALT_KEY: ${LITELLM_SALT_KEY}
+      PROXY_BASE_URL: ${PUBLIC_BASE_URL}
+      STORE_MODEL_IN_DB: "True"
+    ports:
+      - "4000:4000"
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: litellm
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+
+volumes:
+  postgres_data:

@@ -15,11 +15,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - run: node --check web/site/app.js
       - run: node tests/check-static.mjs
-      - run: docker build -t api2cursor-next-web ./web
+      - run: docker build -t api2cursor-next-litellm ./litellm
       - run: cp .env.example .env
       - run: docker compose config --quiet
+      - run: docker compose -f rainyun-compose.yml config --no-interpolate --quiet
 
   smoke:
     runs-on: ubuntu-latest
@@ -37,7 +37,39 @@ jobs:
           done
           docker compose logs
           exit 1
-      - run: curl --fail --silent http://127.0.0.1:3029/ | grep "API2Cursor Next"
+      - run: curl --fail --silent http://127.0.0.1:3029/ui/
       - run: curl --fail --silent http://127.0.0.1:3029/health/liveliness
+      - run: test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:3029/cursor)" = "401"
       - if: always()
         run: docker compose down -v
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [static, smoke]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/ninthless/api2cursor-next-litellm
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=sha-
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./litellm
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
