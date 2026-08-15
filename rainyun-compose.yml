@@ -1,6 +1,6 @@
 services:
   litellm:
-    image: ghcr.io/ninthless/api2cursor-next-litellm:latest
+    image: ghcr.io/ninthless/llm-gateway-lite:latest
     pull_policy: always
     environment:
       DATABASE_URL: postgresql://litellm:replace-with-random-postgres-password@${rca_svc_db_postgres}/litellm

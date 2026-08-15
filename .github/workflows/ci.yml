@@ -16,7 +16,7 @@ jobs:
         with:
           node-version: 24
       - run: node tests/check-static.mjs
-      - run: docker build -t api2cursor-next-litellm ./litellm
+      - run: docker build -t llm-gateway-lite ./litellm
       - run: cp .env.example .env
       - run: docker compose config --quiet
       - run: docker compose -f rainyun-compose.yml config --no-interpolate --quiet
@@ -62,7 +62,7 @@ jobs:
       - uses: docker/metadata-action@v5
         id: meta
         with:
-          images: ghcr.io/ninthless/api2cursor-next-litellm
+          images: ghcr.io/ninthless/llm-gateway-lite
           tags: |
             type=raw,value=latest
             type=sha,prefix=sha-

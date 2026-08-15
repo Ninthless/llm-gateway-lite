@@ -12,15 +12,15 @@ assert.match(compose, /litellm:\s+build: \.\/litellm/);
 assert.match(compose, /postgres:16-alpine/);
 assert.match(compose, /"3029:4000"/);
 assert.doesNotMatch(compose, /^\s{2}web:/m);
-assert.match(rainyunCompose, /ghcr\.io\/ninthless\/api2cursor-next-litellm:latest/);
+assert.match(rainyunCompose, /ghcr\.io\/ninthless\/llm-gateway-lite:latest/);
 assert.match(
   rainyunCompose,
-  /litellm:\s+image: ghcr\.io\/ninthless\/api2cursor-next-litellm:latest\s+pull_policy: always/,
+  /litellm:\s+image: ghcr\.io\/ninthless\/llm-gateway-lite:latest\s+pull_policy: always/,
 );
 assert.match(rainyunCompose, /\$\{rca_svc_db_postgres\}/);
 assert.match(rainyunCompose, /postgres_data:\/var\/lib\/postgresql\/data/);
 assert.match(rainyunCompose, /"4000:4000"/);
-assert.doesNotMatch(rainyunCompose, /api2cursor-next-web/);
+assert.doesNotMatch(rainyunCompose, /api2cursor-next/);
 assert.doesNotMatch(rainyunCompose, /^\s+deploy:/m);
 assert.doesNotMatch(rainyunCompose, /\$\{(?:POSTGRES_PASSWORD|LITELLM_MASTER_KEY|LITELLM_SALT_KEY|PUBLIC_BASE_URL)\}/);
 assert.match(rainyunCompose, /LITELLM_MASTER_KEY: sk-replace-with-random-master-key/);

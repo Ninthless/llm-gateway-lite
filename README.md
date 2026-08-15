@@ -1,4 +1,4 @@
-# API2Cursor Next
+# LLM Gateway Lite
 
 面向个人用户的轻量 Cursor 模型网关，直接运行 LiteLLM Proxy 与 PostgreSQL，不包含自建 Web、Nginx 或前端依赖。
 
@@ -49,7 +49,7 @@ docker compose up -d --build
 node tests/check-static.mjs
 docker compose config --quiet
 docker compose -f rainyun-compose.yml config --no-interpolate --quiet
-docker build -t api2cursor-next-litellm ./litellm
+docker build -t llm-gateway-lite ./litellm
 ```
 
 ## 许可证

@@ -1,6 +1,6 @@
 FROM ghcr.io/berriai/litellm-database:v1.97.0-rc.1
 
-LABEL org.opencontainers.image.source=https://github.com/Ninthless/api2cursor-next
+LABEL org.opencontainers.image.source=https://github.com/Ninthless/llm-gateway-lite
 
 COPY config.yaml /app/config.yaml
 

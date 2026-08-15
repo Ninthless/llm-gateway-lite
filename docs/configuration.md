@@ -1,4 +1,4 @@
-# API2Cursor Next 完整配置与故障排查
+# LLM Gateway Lite 完整配置与故障排查
 
 本文档覆盖本地部署、雨云部署、LiteLLM 后台、上游模型、Virtual Key、Cursor 接入、完整能力验证、备份升级和已知问题。
 
@@ -244,7 +244,7 @@ POSTGRES_PASSWORD=与 DATABASE_URL 完全相同的数据库密码
 ```text
 名称：postgres-data
 挂载路径：/var/lib/postgresql/data
-子路径：api2cursor-next/postgres
+子路径：llm-gateway-lite/postgres
 内容类型：目录
 ```
 
@@ -673,7 +673,7 @@ Salt Key 用于加密数据库中的上游凭据。恢复原 Salt Key，或重�
 
 确认：
 
-- 镜像名为 `ghcr.io/ninthless/api2cursor-next-litellm:latest`
+- 镜像名为 `ghcr.io/ninthless/llm-gateway-lite:latest`
 - GitHub Packages 对该镜像允许公开匿名拉取
 - 雨云节点可以访问 GHCR
 - 镜像构建工作流已经成功发布对应架构
@@ -712,7 +712,7 @@ Cursor 报错时保留完整错误和 Request ID。使用 LiteLLM `Logs` 按时�
 node tests/check-static.mjs
 docker compose config --quiet
 docker compose -f rainyun-compose.yml config --no-interpolate --quiet
-docker build -t api2cursor-next-litellm ./litellm
+docker build -t llm-gateway-lite ./litellm
 ```
 
 运行状态：
