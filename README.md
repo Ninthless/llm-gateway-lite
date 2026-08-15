@@ -210,11 +210,52 @@ https://你的域名/cursor
 1. 打开 `https://你的域名/ui/`。
 2. 用户名填写 `admin`。
 3. 密码填写 `LITELLM_MASTER_KEY`。
-4. 进入 Models，添加上游供应商、模型名称、API Base 和上游 API Key。
-5. 设置一个供 Cursor 选择的 Public Model Name。
-6. 进入 Virtual Keys，创建一个个人 Key。
-7. 只给该 Key 开放需要的模型，并按需设置预算、RPM 和 TPM。
-8. 保存完整 Virtual Key。完整值通常只在创建时显示一次。
+4. 进入 `Models + Endpoints`，选择 `Add Model`。
+5. 根据上游类型填写模型参数。
+6. 保存后进入 `Playground`，使用刚添加的 Public Model Name 发送一条测试消息。
+7. 测试通过后进入 `Virtual Keys`，选择 `Create New Key`。
+8. 只给该 Key 开放需要的 Public Model Name，并按需设置预算、RPM 和 TPM。
+9. 创建并立即保存完整 Virtual Key。完整值通常只显示一次。
+
+OpenAI 官方上游示例：
+
+```text
+Provider：OpenAI
+Public Model Name：gpt-4.1
+LiteLLM Model Name：openai/gpt-4.1
+API Key：上游 OpenAI API Key
+API Base：留空
+```
+
+OpenAI 兼容上游示例：
+
+```text
+Provider：OpenAI 或 OpenAI Compatible
+Public Model Name：my-model
+LiteLLM Model Name：openai/上游实际模型名
+API Key：上游 API Key
+API Base：https://上游地址/v1
+```
+
+Anthropic 官方上游示例：
+
+```text
+Provider：Anthropic
+Public Model Name：claude-sonnet
+LiteLLM Model Name：anthropic/上游实际模型名
+API Key：上游 Anthropic API Key
+API Base：留空
+```
+
+字段含义：
+
+- `Public Model Name` 是 LiteLLM 对外暴露的别名，也是 Cursor 中填写的模型名称
+- `LiteLLM Model Name` 是 LiteLLM 实际发送给供应商的模型标识，通常需要保留供应商前缀
+- `API Base` 必须填写上游 API 根地址，不要填写具体的 `/chat/completions` 路径
+- 同一个 Public Model Name 可以添加多个上游部署，由 LiteLLM 进行路由
+- 不确定上游模型名时，先调用上游的 `/v1/models` 或查看上游文档，不要根据展示名称猜测
+
+如果表单还显示自定义 Headers、API Version、Organization、RPM、TPM 等字段，没有明确需求时先留空。Azure OpenAI 必须按 Azure Provider 填写部署名、Endpoint 和 API Version，不能套用普通 OpenAI 兼容上游示例。
 
 不要在 Cursor 中直接使用 Master Key。Master Key 拥有管理权限，日常调用应使用 Virtual Key。
 
@@ -257,6 +298,24 @@ https://你的域名/cursor
 6. 通过后再更新雨云应用。
 
 ### 9. 常见问题
+
+雨云域名返回 `Bad Gateway` 或 `no available server`，同时 `litellm` 没有日志：
+
+- 这表示 HTTPS 网站服务已经建立，但容器 `4000` 端口后面暂时没有可用的 LiteLLM 进程
+- 首次启动先给 `litellm` 分配 `2 Core`、`2 G`，等待数据库迁移完成；稳定后可降到 `1 Core`、`1 G` 观察
+- 在 `litellm` 的“命令与参数”中保持 Command 和 Args 为空，使用镜像自带启动配置
+- 镜像默认参数为 `--config /app/config.yaml --port 4000 --num_workers 1`
+- 确认 `DATABASE_URL`、`LITELLM_MASTER_KEY`、`LITELLM_SALT_KEY` 已替换占位值
+- 确认 `DATABASE_URL` 中保留 `${rca_svc_db_postgres}`，且密码与 `db` 的 `POSTGRES_PASSWORD` 完全一致
+- 确认 `db` 容器名为 `db`，数据库服务名为 `postgres`，内部端口为 `5432`
+- 保存后重启应用，先测试 `/health/liveliness`，再测试 `/health/readiness` 和 `/ui/`
+
+PostgreSQL 首次启动出现 `locale: not found`、`no usable system locales were found` 或本地 `trust` 警告：
+
+- `postgres:16-alpine` 使用 musl，locale 警告不代表数据库启动失败
+- 官方镜像初始化时允许容器内 Unix Socket 使用本地 `trust`，其他容器仍通过密码连接
+- 日志出现 `database system is ready to accept connections` 即表示数据库已就绪
+- 初始化阶段临时启动、快速关闭并再次正式启动属于正常流程
 
 `litellm` 一直重启：
 
@@ -331,6 +390,9 @@ docker build -t api2cursor-next-litellm ./litellm
 - [LiteLLM Docker Quickstart](https://docs.litellm.ai/docs/proxy/docker_quick_start)
 - [LiteLLM Production Deployment](https://docs.litellm.ai/docs/proxy/deploy)
 - [LiteLLM Production Best Practices](https://docs.litellm.ai/docs/proxy/prod)
+- [LiteLLM Admin UI](https://docs.litellm.ai/docs/proxy/ui)
+- [LiteLLM Model Management](https://docs.litellm.ai/docs/proxy/model_management)
+- [LiteLLM Cursor Integration](https://docs.litellm.ai/docs/tutorials/cursor_integration)
 - [雨云云应用 Docker Compose 更新公告](https://forum.rainyun.com/t/topic/12843)
 - [雨云 App 版本制作教程](https://forum.rainyun.com/t/topic/11296)
 - [雨云云应用快速上手](https://www.rainyun.com/docs/products/rca/start.html)
