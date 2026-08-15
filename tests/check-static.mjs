@@ -17,6 +17,15 @@ assert.match(rainyunCompose, /\$\{rca_svc_db_postgres\}/);
 assert.match(rainyunCompose, /postgres_data:\/var\/lib\/postgresql\/data/);
 assert.match(rainyunCompose, /"4000:4000"/);
 assert.doesNotMatch(rainyunCompose, /api2cursor-next-web/);
+assert.doesNotMatch(rainyunCompose, /^\s+deploy:/m);
+assert.doesNotMatch(rainyunCompose, /\$\{(?:POSTGRES_PASSWORD|LITELLM_MASTER_KEY|LITELLM_SALT_KEY|PUBLIC_BASE_URL)\}/);
+assert.match(rainyunCompose, /LITELLM_MASTER_KEY: sk-replace-with-random-master-key/);
+assert.match(rainyunCompose, /LITELLM_SALT_KEY: sk-replace-with-random-salt-key/);
+assert.doesNotMatch(rainyunCompose, /PROXY_BASE_URL/);
+assert.equal(
+  rainyunCompose.match(/replace-with-random-postgres-password/g)?.length,
+  2,
+);
 assert.match(dockerfile, /litellm-database:v1\.97\.0-rc\.1/);
 assert.match(dockerfile, /"--num_workers", "1"/);
 assert.match(config, /store_model_in_db: true/);
