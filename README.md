@@ -25,11 +25,11 @@
 
 雨云建议限制：
 
-- LiteLLM：`1 vCPU`、`1280 MB`
-- PostgreSQL：`0.25 vCPU`、`256 MB`
+- LiteLLM：`1 vCPU`、`1024 MB`
+- PostgreSQL：`0.5 vCPU`、`256 MB`
 - 项目可用内存：建议至少 `2 GB`
 
-`1 GB` 总内存只比空闲实测高约两百 MiB，启动迁移、管理后台加载、流式请求和 Agent 工具调用都可能产生峰值，因此不建议用于长期运行。个人低并发从 `2 GB` 开始即可，不需要 Redis；只有以后扩展多个 LiteLLM 实例时才需要重新设计共享限流和缓存。
+上述数值是雨云当前界面可选档位中的最低建议，不会由 Compose 导入器自动带入，必须在导入后手动设置。LiteLLM 空闲实测约 `740-761 MiB`，`1024 MB` 仅适合个人低并发；出现 OOM 或 Agent 长任务重启时，将 LiteLLM 提高到 `2048 MB`。项目总内存建议至少 `2 GB`，个人部署不需要 Redis；只有以后扩展多个 LiteLLM 实例时才需要重新设计共享限流和缓存。
 
 ## 本地运行
 
@@ -102,60 +102,79 @@ $postgres
 4. 新建一个版本，选择“从 Docker 导入”。
 5. 导入仓库根目录的 [`rainyun-compose.yml`](rainyun-compose.yml)。
 
-导入后应出现 `litellm` 和 `db` 两个容器。如果 `ghcr.io/ninthless/api2cursor-next-litellm:latest` 拉取失败，先确认 GitHub Packages 中该镜像允许公开匿名拉取。
+导入文件中的自定义环境变量使用可直接解析的占位值，避免雨云在选项创建前报“缺失对应的环境变量”。导入后应出现 `litellm` 和 `db` 两个容器。如果 `ghcr.io/ninthless/api2cursor-next-litellm:latest` 拉取失败，先确认 GitHub Packages 中该镜像允许公开匿名拉取。
 
-### 3. 核对容器服务
+### 3. 导入后必须修改的地方
+
+Compose 可以直接通过雨云导入，但不能安全地零修改安装，因为管理员密钥、加密密钥和数据库密码必须由每位用户单独生成。导入完成后，先不要保存或安装，按下面顺序修改。
 
 `litellm` 容器：
 
-- 镜像：`ghcr.io/ninthless/api2cursor-next-litellm:latest`
-- 服务名称：`api`
-- 服务类型：外部访问
-- 内部端口：`4000`
-- 协议：`TCP`
-- 资源：`1 vCPU`、`1280 MB`
+1. 打开顶部的 `litellm` 容器标签。
+2. 在容器基本信息中，把“最小 CPU”改为 `1000m`。
+3. 把“最小内存”改为 `1024 MB`。
+4. 打开“环境变量”标签。
+5. 将 `LITELLM_MASTER_KEY` 的值改成第 1 步生成的 `$master`。
+6. 将 `LITELLM_SALT_KEY` 的值改成第 1 步生成的 `$salt`。
+7. 找到 `DATABASE_URL`，只把其中的 `replace-with-random-postgres-password` 替换成第 1 步生成的 `$postgres`，保留 `${rca_svc_db_postgres}` 不变。
+8. 确认 `STORE_MODEL_IN_DB` 的值是 `True`。
+9. 打开“服务配置”标签，确认存在一项服务：
+
+```text
+服务名称：api
+显示名称：LiteLLM
+服务类型：外部访问
+内部端口：4000
+协议：TCP
+```
 
 `db` 容器：
 
-- 镜像：`postgres:16-alpine`
-- 服务名称：`postgres`
-- 服务类型：内部访问
-- 内部端口：`5432`
-- 协议：`TCP`
-- 资源：`0.25 vCPU`、`256 MB`
-
-不要把 PostgreSQL 的 `5432` 端口开放到公网。`${rca_svc_db_postgres}` 依赖容器名 `db` 和服务名 `postgres`，名称必须一致。
-
-### 4. 配置环境变量
-
-在模板中创建四个选项：
-
-- `LITELLM_MASTER_KEY`：必填，填入第 1 步生成的 Master Key
-- `LITELLM_SALT_KEY`：必填，填入第 1 步生成的 Salt Key
-- `POSTGRES_PASSWORD`：必填，填入第 1 步生成的数据库密码
-- `PUBLIC_BASE_URL`：必填，先填计划使用的 HTTPS 地址，例如 `https://llm.example.com`
-
-确认 `litellm` 容器环境变量：
+1. 打开顶部的 `db` 容器标签。
+2. 保持“最小 CPU”为平台最低档 `500m`。
+3. 保持“最小内存”为平台最低档 `256 MB`。
+4. 打开“环境变量”标签。
+5. 将 `POSTGRES_PASSWORD` 的值改成同一个 `$postgres`。
+6. 确认 `POSTGRES_DB` 和 `POSTGRES_USER` 都是 `litellm`。
+7. 打开“服务配置”标签，确认存在一项服务：
 
 ```text
-DATABASE_URL=postgresql://litellm:${POSTGRES_PASSWORD}@${rca_svc_db_postgres}/litellm
-LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
-LITELLM_SALT_KEY=${LITELLM_SALT_KEY}
-PROXY_BASE_URL=${PUBLIC_BASE_URL}
+服务名称：postgres
+显示名称：PostgreSQL
+服务类型：内部访问
+内部端口：5432
+协议：TCP
+```
+
+8. 打开“持久化卷”标签，确认存在目录挂载：
+
+```text
+挂载路径：/var/lib/postgresql/data
+内容类型：目录
+```
+
+修改完成后，`litellm` 的环境变量应类似：
+
+```text
+DATABASE_URL=postgresql://litellm:你生成的数据库密码@${rca_svc_db_postgres}/litellm
+LITELLM_MASTER_KEY=sk-你生成的MasterKey
+LITELLM_SALT_KEY=sk-你生成的SaltKey
 STORE_MODEL_IN_DB=True
 ```
 
-确认 `db` 容器环境变量：
+`db` 的环境变量应类似：
 
 ```text
 POSTGRES_DB=litellm
 POSTGRES_USER=litellm
-POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+POSTGRES_PASSWORD=你生成的同一个数据库密码
 ```
 
-### 5. 配置数据库持久化
+`${rca_svc_db_postgres}` 由雨云自动生成，依赖容器名 `db` 和服务名 `postgres`，不要修改。数据库密码在 `DATABASE_URL` 和 `POSTGRES_PASSWORD` 中必须完全一致。确认页面中不再出现任何 `replace-with-` 占位值后，才保存并安装。
 
-为 `db` 容器添加目录型持久化卷：
+### 4. 配置数据库持久化
+
+如果 Compose 导入后没有自动生成持久化卷，在 `db` 容器的“持久化卷”标签中手动添加：
 
 ```text
 名称：postgres-data
@@ -166,7 +185,7 @@ POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 
 没有这个挂载，容器重建后模型、Virtual Key 和用量数据会丢失。
 
-### 6. 安装并绑定 HTTPS
+### 5. 安装并绑定 HTTPS
 
 1. 保存模板版本并安装应用。
 2. 等待两个容器都进入运行状态，首次启动通常需要执行数据库迁移。
@@ -174,7 +193,7 @@ POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 4. 在项目“网站管理”中添加“应用代理”网站。
 5. 选择 `litellm` 容器的 `api` 服务。
 6. 使用雨云分配域名或绑定自己的域名，并启用 HTTPS。
-7. 如果最终域名和 `PUBLIC_BASE_URL` 不同，修改该变量后重启 `litellm` 容器。
+7. 普通管理后台和 Cursor 接入不要求 `PROXY_BASE_URL`。如果以后使用 SSO 或 MCP OAuth，再到 `litellm` 的“环境变量”中添加 `PROXY_BASE_URL=https://你的域名`，只能填写协议和域名，不能带尾斜杠或路径。
 
 最终应能访问：
 
@@ -186,7 +205,7 @@ https://你的域名/cursor
 
 健康检查返回成功后再进行后台配置。`/cursor` 会以 `307` 跳转到 `/cursor/`；直接访问 `/cursor/` 且未携带 API Key 时返回 `401` 是正常的，说明路由存在且鉴权生效。
 
-### 7. 配置 LiteLLM 官方后台
+### 6. 配置 LiteLLM 官方后台
 
 1. 打开 `https://你的域名/ui/`。
 2. 用户名填写 `admin`。
@@ -199,13 +218,13 @@ https://你的域名/cursor
 
 不要在 Cursor 中直接使用 Master Key。Master Key 拥有管理权限，日常调用应使用 Virtual Key。
 
-### 8. 配置 Cursor
+### 7. 配置 Cursor
 
 在 Cursor 的 Models 设置中：
 
 1. 启用 `Override OpenAI Base URL`。
 2. Base URL 填写 `https://你的域名/cursor`。
-3. API Key 填写第 7 步创建的 Virtual Key。
+3. API Key 填写第 6 步创建的 Virtual Key。
 4. 模型名称填写 LiteLLM 中设置的 Public Model Name。
 
 按顺序验证：
@@ -217,7 +236,7 @@ https://你的域名/cursor
 
 文本可用不等于 Agent 完整可用，必须实际验证工具调用。
 
-### 9. 备份与升级
+### 8. 备份与升级
 
 必须一起保存：
 
@@ -237,7 +256,7 @@ https://你的域名/cursor
 5. 验证 Ask、Plan、Agent、工具调用、ApplyPatch 和流式输出。
 6. 通过后再更新雨云应用。
 
-### 10. 常见问题
+### 9. 常见问题
 
 `litellm` 一直重启：
 
