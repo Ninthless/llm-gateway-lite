@@ -53,7 +53,7 @@ docker compose up -d --build
 
 - 官方管理后台：`http://localhost:3029/ui/`
 - 健康检查：`http://localhost:3029/health/readiness`
-- Cursor Base URL：`http://localhost:3029/cursor/`
+- Cursor Base URL：`http://localhost:3029/cursor`
 
 官方后台用户名为 `admin`，密码是 `.env` 中的 `LITELLM_MASTER_KEY`。
 
@@ -181,7 +181,7 @@ POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 ```text
 https://你的域名/ui/
 https://你的域名/health/readiness
-https://你的域名/cursor/
+https://你的域名/cursor
 ```
 
 健康检查返回成功后再进行后台配置。`/cursor` 会以 `307` 跳转到 `/cursor/`；直接访问 `/cursor/` 且未携带 API Key 时返回 `401` 是正常的，说明路由存在且鉴权生效。
@@ -204,7 +204,7 @@ https://你的域名/cursor/
 在 Cursor 的 Models 设置中：
 
 1. 启用 `Override OpenAI Base URL`。
-2. Base URL 填写 `https://你的域名/cursor/`。
+2. Base URL 填写 `https://你的域名/cursor`。
 3. API Key 填写第 7 步创建的 Virtual Key。
 4. 模型名称填写 LiteLLM 中设置的 Public Model Name。
 
