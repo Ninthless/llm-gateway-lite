@@ -1,6 +1,11 @@
 services:
   litellm:
     image: ghcr.io/ninthless/api2cursor-next-litellm:latest
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 1280M
     environment:
       DATABASE_URL: postgresql://litellm:${POSTGRES_PASSWORD}@${rca_svc_db_postgres}/litellm
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
@@ -12,6 +17,11 @@ services:
 
   db:
     image: postgres:16-alpine
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
     environment:
       POSTGRES_DB: litellm
       POSTGRES_USER: litellm
