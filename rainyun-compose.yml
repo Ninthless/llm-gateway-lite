@@ -1,6 +1,7 @@
 services:
   litellm:
     image: ghcr.io/ninthless/api2cursor-next-litellm:latest
+    pull_policy: always
     environment:
       DATABASE_URL: postgresql://litellm:replace-with-random-postgres-password@${rca_svc_db_postgres}/litellm
       LITELLM_MASTER_KEY: sk-replace-with-random-master-key

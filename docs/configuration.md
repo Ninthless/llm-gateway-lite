@@ -169,6 +169,8 @@ $postgres
 
 `rainyun-compose.yml` 使用可直接解析的占位值。不要在导入前把普通变量改成嵌套 `${VAR}`；雨云导入器只应保留平台生成的 `${rca_svc_*}` 引用。
 
+`litellm` 服务设置了 `pull_policy: always`。雨云保留该字段时，每次重新部署都会检查并拉取项目 `latest` 镜像。该设置不会定时重建应用，也不会自动更新 `litellm/Dockerfile` 中固定的 LiteLLM 基础版本；升级仍需先修改固定版本、通过 CI 发布新镜像，再在雨云重新部署。
+
 ### 4.3 配置 `litellm` 容器
 
 资源：

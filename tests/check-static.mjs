@@ -13,6 +13,10 @@ assert.match(compose, /postgres:16-alpine/);
 assert.match(compose, /"3029:4000"/);
 assert.doesNotMatch(compose, /^\s{2}web:/m);
 assert.match(rainyunCompose, /ghcr\.io\/ninthless\/api2cursor-next-litellm:latest/);
+assert.match(
+  rainyunCompose,
+  /litellm:\s+image: ghcr\.io\/ninthless\/api2cursor-next-litellm:latest\s+pull_policy: always/,
+);
 assert.match(rainyunCompose, /\$\{rca_svc_db_postgres\}/);
 assert.match(rainyunCompose, /postgres_data:\/var\/lib\/postgresql\/data/);
 assert.match(rainyunCompose, /"4000:4000"/);
