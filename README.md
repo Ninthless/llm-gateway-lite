@@ -118,7 +118,7 @@ Compose 可以直接通过雨云导入，但不能安全地零修改安装，因
 6. 将 `LITELLM_SALT_KEY` 的值改成第 1 步生成的 `$salt`。
 7. 找到 `DATABASE_URL`，只把其中的 `replace-with-random-postgres-password` 替换成第 1 步生成的 `$postgres`，保留 `${rca_svc_db_postgres}` 不变。
 8. 确认 `STORE_MODEL_IN_DB` 的值是 `True`。
-9. 打开“服务配置”标签，确认存在一项服务：
+9. 打开“服务配置”标签，按下列内容核对；名称或可见性不同就修改，没有该项就新增：
 
 ```text
 服务名称：api
@@ -136,7 +136,7 @@ Compose 可以直接通过雨云导入，但不能安全地零修改安装，因
 4. 打开“环境变量”标签。
 5. 将 `POSTGRES_PASSWORD` 的值改成同一个 `$postgres`。
 6. 确认 `POSTGRES_DB` 和 `POSTGRES_USER` 都是 `litellm`。
-7. 打开“服务配置”标签，确认存在一项服务：
+7. 打开“服务配置”标签，按下列内容核对；名称或可见性不同就修改，没有该项就新增：
 
 ```text
 服务名称：postgres
@@ -146,7 +146,7 @@ Compose 可以直接通过雨云导入，但不能安全地零修改安装，因
 协议：TCP
 ```
 
-8. 打开“持久化卷”标签，确认存在目录挂载：
+8. 打开“持久化卷”标签，确认存在下列目录挂载；没有就按第 4 节手动新增：
 
 ```text
 挂载路径：/var/lib/postgresql/data
