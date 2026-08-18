@@ -34,5 +34,7 @@ assert.match(dockerfile, /ARG LITELLM_VERSION=v1\.97\.0/);
 assert.match(dockerfile, /litellm-database:\$\{LITELLM_VERSION\}/);
 assert.match(dockerfile, /"--num_workers", "1"/);
 assert.match(config, /store_model_in_db: true/);
+assert.match(config, /callbacks: \/app\/call_id_hook\.py/);
+assert.match(dockerfile, /COPY call_id_hook\.py \/app\/call_id_hook\.py/);
 
 console.log("Static contracts passed");

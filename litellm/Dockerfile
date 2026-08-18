@@ -5,6 +5,7 @@ FROM ghcr.io/berriai/litellm-database:${LITELLM_VERSION}
 LABEL org.opencontainers.image.source=https://github.com/Ninthless/llm-gateway-lite
 
 COPY config.yaml /app/config.yaml
+COPY call_id_hook.py /app/call_id_hook.py
 
 EXPOSE 4000
 
