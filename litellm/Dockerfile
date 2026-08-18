@@ -1,4 +1,6 @@
-FROM ghcr.io/berriai/litellm-database:v1.97.0-rc.1
+ARG LITELLM_VERSION=v1.97.0
+
+FROM ghcr.io/berriai/litellm-database:${LITELLM_VERSION}
 
 LABEL org.opencontainers.image.source=https://github.com/Ninthless/llm-gateway-lite
 

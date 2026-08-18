@@ -8,9 +8,9 @@ const [compose, rainyunCompose, dockerfile, config] = await Promise.all([
   readFile("litellm/config.yaml", "utf8"),
 ]);
 
-assert.match(compose, /litellm:\s+build: \.\/litellm/);
+assert.match(compose, /litellm:\s+build:\s+context: \.\/litellm/);
 assert.match(compose, /postgres:16-alpine/);
-assert.match(compose, /"3029:4000"/);
+assert.match(compose, /"127\.0\.0\.1:3029:4000"/);
 assert.doesNotMatch(compose, /^\s{2}web:/m);
 assert.match(rainyunCompose, /ghcr\.io\/ninthless\/llm-gateway-lite:latest/);
 assert.match(
@@ -30,7 +30,8 @@ assert.equal(
   rainyunCompose.match(/replace-with-random-postgres-password/g)?.length,
   2,
 );
-assert.match(dockerfile, /litellm-database:v1\.97\.0-rc\.1/);
+assert.match(dockerfile, /ARG LITELLM_VERSION=v1\.97\.0/);
+assert.match(dockerfile, /litellm-database:\$\{LITELLM_VERSION\}/);
 assert.match(dockerfile, /"--num_workers", "1"/);
 assert.match(config, /store_model_in_db: true/);
 

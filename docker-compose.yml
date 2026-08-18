@@ -1,8 +1,11 @@
 services:
   litellm:
-    build: ./litellm
+    build:
+      context: ./litellm
+      args:
+        LITELLM_VERSION: ${LITELLM_VERSION:-v1.97.0}
     ports:
-      - "3029:4000"
+      - "127.0.0.1:3029:4000"
     environment:
       DATABASE_URL: postgresql://litellm:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/litellm
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY is required}
