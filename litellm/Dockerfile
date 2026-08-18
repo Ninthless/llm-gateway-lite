@@ -1,4 +1,4 @@
-ARG LITELLM_VERSION=v1.97.0
+ARG LITELLM_VERSION=v1.98.0-rc.1
 
 FROM ghcr.io/berriai/litellm-database:${LITELLM_VERSION}
 
