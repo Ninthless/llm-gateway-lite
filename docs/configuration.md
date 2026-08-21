@@ -1,17 +1,25 @@
 # LLM Gateway Lite 完整配置与故障排查
 
-本文档覆盖本地部署、雨云部署、LiteLLM 后台、上游模型、Virtual Key、Cursor 接入、完整能力验证、备份升级和已知问题。
+本文档以当前生产环境为准，覆盖雨云 RCA 云应用部署、云端运维、本地 Docker 测试、LiteLLM 后台、上游模型、Virtual Key、Cursor 接入、完整能力验证、备份升级和已知问题。
 
-项目固定使用 LiteLLM Proxy `v1.97.0-rc.1` 与 PostgreSQL。除非已经完成兼容性回归测试，不要自行替换为 `latest`。
+当前生产部署使用雨云 RCA 云应用，LiteLLM 镜像由 GitHub Container Registry 提供，数据库使用 PostgreSQL。镜像内部固定 LiteLLM Proxy `v1.98.0-rc.1`。除非已经完成兼容性回归测试，不要自行替换为 `latest`。
 
 ## 1. 架构、端口与资源
 
-部署包含两个容器：
+本地 Docker Compose 包含三个容器：
 
 - `litellm`：LiteLLM Proxy、官方管理后台、OpenAI 兼容接口和 Cursor 接口
 - `db`：PostgreSQL，保存模型、凭据、Virtual Key、预算和用量数据
+- `redis`：路由协调、限流状态和缓存
 
-对外入口：
+生产环境的雨云 RCA 模板包含两个容器：
+
+- `litellm`：从 `ghcr.io/ninthless/llm-gateway-lite:latest` 拉取
+- `db`：PostgreSQL，通过 RCA 内网服务地址连接
+
+Redis 只在本地 Compose 中显式运行。当前雨云单实例部署不依赖独立 Redis；如果以后扩容 LiteLLM 副本或需要跨实例限流、路由状态和缓存，应把 Redis 加入云端架构。
+
+对外入口（将域名替换为当前雨云网站代理域名）：
 
 | 用途 | 本地地址 | 公网地址 |
 | --- | --- | --- |
@@ -26,7 +34,7 @@
 - PostgreSQL：约 `55-57 MiB`
 - 合计：约 `795-818 MiB`
 
-个人部署建议：
+当前云端部署建议：
 
 - 首次启动或迁移：LiteLLM `2 vCPU`、`2048 MB`
 - 稳定低并发：LiteLLM `1 vCPU`、`1024 MB`
@@ -34,6 +42,8 @@
 - 项目可用内存：至少 `2 GB`
 - LiteLLM 副本数：`1`
 - Worker 数：`1`
+
+本地测试建议与云端相同。不要在个人 Cursor 网关上盲目增加副本；没有共享 Redis 和负载均衡时，多副本会造成限流、路由状态和日志排查不一致。
 
 `1024 MB` 只适合个人低并发。Agent 长任务、并行工具调用或数据库迁移期间出现 OOM 时，将 LiteLLM 提高到 `2048 MB`。
 
@@ -107,8 +117,8 @@ docker compose logs -f db
 后台登录信息：
 
 ```text
-用户名：admin
-密码：.env 中的 LITELLM_MASTER_KEY
+用户名：.env 中的 UI_USERNAME，默认 admin
+密码：.env 中的 UI_PASSWORD
 ```
 
 ### 3.4 停止与清理
@@ -127,11 +137,27 @@ docker compose down -v
 
 `docker compose down -v` 不可恢复，不要把它当作普通重启命令。
 
-## 4. 雨云部署
+## 4. 当前生产环境：雨云 RCA 云应用部署
 
-雨云云应用 RCA 支持多容器和 Docker Compose 导入。控制台名称可能随版本变化；本文中的“应用模板”“版本编辑”和“从 Docker 导入”以当前控制台对应入口为准。
+当前项目不是普通 VPS 上手工运行 Docker，而是部署在雨云 RCA（Rain Cloud Apps）云应用中。RCA 基于容器编排运行应用，支持多容器 Compose 导入、容器间内网服务发现、资源限制、持久化卷和网站代理。
 
-### 4.1 生成三个密钥
+控制台名称可能随版本变化；本文中的“应用模板”“版本编辑”和“从 Docker 导入”以当前控制台对应入口为准。雨云官方资料确认，Compose 导入后的容器可以通过 `${rca_svc_[容器名]_[服务名]}` 获取另一个容器的内网地址。
+
+### 4.1 当前部署拓扑
+
+```text
+Cursor
+  ↓ HTTPS
+雨云网站代理 / 自定义域名
+  ↓ 外部服务 api:4000
+litellm
+  ↓ ${rca_svc_db_postgres}:5432
+PostgreSQL
+```
+
+公网只暴露 LiteLLM 的 `4000` 服务。PostgreSQL 使用内部服务，不应暴露到公网。
+
+### 4.2 生成三个密钥
 
 Windows PowerShell 5.1 及以上：
 
@@ -158,7 +184,7 @@ $postgres
 
 分别保存为 `LITELLM_MASTER_KEY`、`LITELLM_SALT_KEY` 和 `POSTGRES_PASSWORD`。
 
-### 4.2 导入 Compose
+### 4.3 导入 Compose
 
 1. 登录雨云控制台并进入“云应用”。
 2. 创建项目，确保至少还有 `2 GB` 可分配内存。
@@ -166,12 +192,13 @@ $postgres
 4. 选择“从 Docker 导入”。
 5. 导入仓库根目录的 `rainyun-compose.yml`。
 6. 确认出现 `litellm` 和 `db` 两个容器。
+7. 确认 `litellm` 暴露 `4000/TCP`，`db` 只提供 `5432/TCP` 内部服务。
 
-`rainyun-compose.yml` 使用可直接解析的占位值。不要在导入前把普通变量改成嵌套 `${VAR}`；雨云导入器只应保留平台生成的 `${rca_svc_*}` 引用。
+`rainyun-compose.yml` 使用可直接解析的占位值。不要在导入前把普通变量改成嵌套 `${VAR}`；雨云导入器只应保留平台生成的 `${rca_svc_*}` 引用。当前文件中的 `replace-with-...` 都必须在导入界面替换，不能直接用于生产。
 
 `litellm` 服务设置了 `pull_policy: always`。雨云保留该字段时，每次重新部署都会检查并拉取项目 `latest` 镜像。该设置不会定时重建应用，也不会自动更新 `litellm/Dockerfile` 中固定的 LiteLLM 基础版本；升级仍需先修改固定版本、通过 CI 发布新镜像，再在雨云重新部署。
 
-### 4.3 配置 `litellm` 容器
+### 4.4 配置 `litellm` 容器
 
 资源：
 
@@ -198,6 +225,8 @@ STORE_MODEL_IN_DB=True
 - Command 和 Args 保持为空
 - 镜像自带启动参数为 `--config /app/config.yaml --port 4000 --num_workers 1`
 
+启动失败时不要在雨云控制台额外覆盖 Command 或 Args。覆盖后可能绕过镜像内置配置，导致 LiteLLM 没有读取 `/app/config.yaml` 或没有监听 `4000`。
+
 外部服务：
 
 ```text
@@ -208,7 +237,7 @@ STORE_MODEL_IN_DB=True
 协议：TCP
 ```
 
-### 4.4 配置 `db` 容器
+### 4.5 配置 `db` 容器
 
 资源：
 
@@ -237,7 +266,7 @@ POSTGRES_PASSWORD=与 DATABASE_URL 完全相同的数据库密码
 
 `${rca_svc_db_postgres}` 依赖容器名 `db` 和服务名 `postgres`，不要修改这两个名称。
 
-### 4.5 配置数据库持久化
+### 4.6 配置数据库持久化
 
 确认 `db` 容器存在：
 
@@ -250,7 +279,7 @@ POSTGRES_PASSWORD=与 DATABASE_URL 完全相同的数据库密码
 
 没有持久化挂载时，容器重建会丢失模型、上游凭据、Virtual Key、预算和用量记录。
 
-### 4.6 安装与 HTTPS
+### 4.7 安装与 HTTPS
 
 1. 确认页面中不存在任何 `replace-with-` 占位值。
 2. 保存模板版本并安装应用。
@@ -320,9 +349,18 @@ API Base：https://上游地址/v1
 Provider：Anthropic
 Public Model Name：claude-sonnet
 LiteLLM Model Name：anthropic/上游实际模型名
-API Key：Anthropic API Key
-API Base：留空
+API Key：Anthropic 兼容上游 API Key
+API Base：https://上游根地址
 ```
+
+OrangeCC 的 Kiro Claude 渠道使用：
+
+```text
+LiteLLM Model Name：anthropic/claude-sonnet-5
+API Base：https://api.orangecc.cc
+```
+
+不要把这类 Claude 模型配置成 `openai/responses/claude-*`，否则 LiteLLM 会按 OpenAI Responses 协议发送，Request Logs 中也会显示 `openai`。Grok 和 GPT 等仍按上游实际协议使用 `openai/responses/...`。
 
 Azure OpenAI 必须选择 Azure Provider，并按 Azure 的部署名、Endpoint 和 API Version 配置，不能套用普通 OpenAI 兼容示例。
 
@@ -487,7 +525,44 @@ Cursor
 
 这不自动保证所有高级能力。图片理解、超长上下文、MCP、复杂工具参数、工具失败自动恢复和长时间 Agent 任务仍需按实际模型与使用场景专项验证。
 
-## 10. 备份与升级
+## 10. 云端日常运维、备份与升级
+
+### 10.1 日常检查
+
+每次修改模型、密钥或雨云版本后，按以下顺序检查：
+
+```text
+1. 雨云应用状态：litellm 和 db 都是运行中
+2. https://你的域名/health/liveliness
+3. https://你的域名/health/readiness
+4. https://你的域名/ui/
+5. LiteLLM Logs 是否完成启动和数据库迁移
+6. Playground 使用 /v1/chat/completions 测试一个模型
+7. Cursor 依次测试 Ask、Plan、Agent
+```
+
+`liveliness` 主要证明进程存活，`readiness` 还要考虑数据库和服务是否已准备好。网站能打开不等于模型链路可用。
+
+### 10.2 雨云重新部署
+
+当前 `rainyun-compose.yml` 使用：
+
+```text
+ghcr.io/ninthless/llm-gateway-lite:latest
+```
+
+`pull_policy: always` 只表示重新部署时检查并拉取最新镜像，不表示镜像会自动定时更新。标准流程是：
+
+1. 修改 `litellm/Dockerfile` 或项目代码。
+2. 在 GitHub Actions 通过静态检查、Compose 检查和 smoke 检查。
+3. CI 成功后发布新的 GHCR 镜像。
+4. 在雨云重新部署应用，使 `litellm` 拉取新镜像。
+5. 观察 LiteLLM 日志，等待数据库迁移完成。
+6. 重新验证健康检查、后台登录、模型、Virtual Key 和 Cursor。
+
+如果只是修改后台中的模型、上游地址或 Virtual Key，不需要重建镜像；这些数据保存在 PostgreSQL 中。
+
+### 10.3 必须一起备份
 
 必须一起备份：
 
@@ -497,6 +572,8 @@ Cursor
 - `POSTGRES_PASSWORD`
 
 只备份数据库但丢失 Salt Key，已加密的上游 API Key 无法恢复。
+
+### 10.4 升级流程
 
 升级流程：
 
@@ -692,11 +769,50 @@ Salt Key 用于加密数据库中的上游凭据。恢复原 Salt Key，或重�
 
 Cursor 报错时保留完整错误和 Request ID。使用 LiteLLM `Logs` 按时间、模型和状态码定位对应请求。排查时不要公开 API Key、Authorization Header 或完整凭据。
 
+### 11.19 OrangeCC 返回 Cloudflare `502 Bad gateway`
+
+如果错误正文包含：
+
+```text
+orangecc.cc | 502: Bad gateway
+Cloudflare
+api.orangecc.cc
+```
+
+这表示 LiteLLM 已经把请求发到 OrangeCC，但 OrangeCC 的 Cloudflare 到其源站之间没有拿到正常响应。它通常不是 Cursor Base URL、Virtual Key 或 `call_id_hook.py` 的问题。
+
+先根据模型协议判断：
+
+- GPT / Grok：检查 `openai/responses/...` 配置和上游 `/v1/responses`
+- Claude：检查 `anthropic/claude-*` 配置和 OrangeCC Anthropic 渠道
+
+Claude 当前配置应为：
+
+```text
+LiteLLM Model Name：anthropic/claude-sonnet-5
+API Base：https://api.orangecc.cc
+```
+
+不要因为错误页面来自 Cloudflare 就把 Claude 改回 `openai/responses/claude-*`。先在同一台云端环境复测，并记录时间、模型和 Request ID；如果直连和 LiteLLM 都返回 Cloudflare 502，应联系上游或等待上游恢复。
+
+### 11.20 Request Logs 显示 `openai` 或 `anthropic`
+
+Request Logs 中的 Provider 取决于 LiteLLM Model Name 的前缀：
+
+```text
+openai/responses/grok-4.6  → openai
+anthropic/claude-sonnet-5  → anthropic
+```
+
+`openai/responses/claude-*` 中的 `openai` 不是日志过滤，也不是请求被发送到 api.openai.com，而是 LiteLLM 选择了 OpenAI Responses 适配器。Claude 使用 OrangeCC 原生 Anthropic 渠道时，应改为 `anthropic/claude-*`。
+
 ## 12. 安全清单
 
 - 只公开 LiteLLM `4000` 服务
 - PostgreSQL 仅内部访问
 - 公网入口启用 HTTPS
+- 雨云网站代理只指向 LiteLLM 的 `api:4000` 服务
+- 不把 PostgreSQL 的 `5432` 服务设为外部访问
 - Cursor 只使用受限 Virtual Key
 - Virtual Key 设置模型范围、预算和限速
 - Master Key 和 Salt Key 不进入 Cursor
@@ -705,6 +821,7 @@ Cursor 报错时保留完整错误和 Request ID。使用 LiteLLM `Logs` 按时�
 - 定期备份数据库卷与三个密钥
 - 上游或 Virtual Key 一旦泄露立即撤销
 - 升级前在测试环境验证完整 Agent 工具链
+- 生产升级前确认 GHCR 镜像构建成功并保留上一版本回滚信息
 
 ## 13. 项目检查命令
 
