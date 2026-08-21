@@ -467,7 +467,7 @@ https://你的域名/cursor/chat/completions
 openai/responses/gpt-5.6-sol
 ```
 
-本项目的 Cursor 入口是 `/cursor`，模型名是 Public Model Name。
+本项目的 Cursor 入口是 `/cursor`，模型名是 Public Model Name。Grok 填写 `grok-46-high` 这类独立档位名，不要加 `-thinking-*` 或 `[context=...]`。
 
 ## 9. 完整能力验证
 
@@ -779,7 +779,7 @@ Cloudflare
 api.orangecc.cc
 ```
 
-这表示 LiteLLM 已经把请求发到 OrangeCC，但 OrangeCC 的 Cloudflare 到其源站之间没有拿到正常响应。它通常不是 Cursor Base URL、Virtual Key 或 `call_id_hook.py` 的问题。
+这表示 LiteLLM 已经把请求发到 OrangeCC，但 OrangeCC 的 Cloudflare 到其源站之间没有拿到正常响应。它通常不是 Cursor Base URL 或 Virtual Key 的问题。
 
 先根据模型协议判断：
 

@@ -1,6 +1,5 @@
 import hashlib
 import json
-import re
 from typing import Any, Literal, Optional, Union
 
 from litellm.caching.caching import DualCache
@@ -9,12 +8,6 @@ from litellm.llms.openai.responses.transformation import OpenAIResponsesAPIConfi
 from litellm.proxy._types import UserAPIKeyAuth
 
 _orig_transform_response_api_response = OpenAIResponsesAPIConfig.transform_response_api_response
-
-_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh")
-_CONTEXT_RE = re.compile(r"\[context=(?P<context>\d+(?:\.\d+)?[kKmM]?)\]")
-_CURSOR_SUFFIX_RE = re.compile(
-    r"^(?P<base>.+)-thinking-(?P<effort>none|minimal|low|medium|high|xhigh)(?P<fast>-fast)?$"
-)
 
 
 class _JsonWithCreatedAt:
@@ -138,30 +131,6 @@ def _normalize_cursor_messages(messages: list) -> list:
     return out
 
 
-def _resolve_cursor_model(model: str) -> tuple[str, Optional[str]]:
-    if not isinstance(model, str) or not model:
-        return model, None
-    match = _CURSOR_SUFFIX_RE.match(model)
-    if not match:
-        return model, None
-    base = match.group("base")
-    effort = match.group("effort")
-    if effort not in _EFFORTS:
-        return model, None
-    return base, effort
-
-
-def _strip_context_override(model: str) -> tuple[str, Optional[int]]:
-    match = _CONTEXT_RE.search(model)
-    if not match:
-        return model, None
-    value = match.group("context")
-    suffix = value[-1].lower()
-    number = float(value[:-1]) if suffix in {"k", "m"} else float(value)
-    multiplier = 1000 if suffix == "k" else 1000000 if suffix == "m" else 1
-    return _CONTEXT_RE.sub("", model), int(number * multiplier)
-
-
 class CallIdSanitizer(CustomLogger):
     async def async_pre_call_hook(
         self,
@@ -179,22 +148,6 @@ class CallIdSanitizer(CustomLogger):
             "rerank",
         ],
     ) -> Optional[Union[Exception, str, dict]]:
-        model = data.get("model")
-        if isinstance(model, str):
-            model, context_limit = _strip_context_override(model)
-            if context_limit is not None:
-                data["model"] = model
-                data.setdefault("max_input_tokens", context_limit)
-            resolved, effort = _resolve_cursor_model(model)
-            if resolved != model:
-                data["model"] = resolved
-            if effort and not data.get("reasoning_effort"):
-                data["reasoning_effort"] = effort
-                if isinstance(data.get("reasoning"), dict):
-                    data["reasoning"].setdefault("effort", effort)
-                elif data.get("reasoning") is None:
-                    data["reasoning"] = {"effort": effort}
-
         messages = data.get("messages") or []
         if isinstance(messages, list):
             messages = _normalize_cursor_messages(messages)

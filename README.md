@@ -8,7 +8,7 @@
 - `db`：PostgreSQL，保存模型、凭据、Virtual Key、预算和用量
 - `redis`：路由协调和 fallback
 
-当前镜像基于 LiteLLM `v1.98.0-rc.1`。模型不写死在 `config.yaml` 里，而是后台入库（`store_model_in_db: true`）。仓库里的 `call_id_hook.py` 会在请求进入 LiteLLM 之前做 Cursor 兼容处理。
+当前镜像基于 LiteLLM `v1.98.0-rc.1`。模型不写死在 `config.yaml` 里，而是后台入库（`store_model_in_db: true`）。`call_id_hook.py` 只做 Cursor / 上游兼容，不解析模型名后缀。
 
 提供：
 
@@ -89,7 +89,7 @@ rainyun-compose.yml         雨云两容器模板：LiteLLM + PostgreSQL
 .env.example                环境变量模板
 litellm/Dockerfile          固定 LiteLLM 版本，并打入 config 与 hook
 litellm/config.yaml         全局设置、Redis、fallback、hook 注册
-litellm/call_id_hook.py     Cursor 请求预处理
+litellm/call_id_hook.py     Cursor 消息与 Responses 兼容处理
 scripts/init.ps1            仅生成部分密钥，不能单独当完整初始化
 scripts/init.sh             同上
 docs/configuration.md       雨云部署、备份升级、完整故障排查
@@ -165,18 +165,7 @@ fallbacks:
 
 主线 `gpt-5.6-sol` 失败时切到 `gpt-5.6-sol-pro`。两个部署都要存在，否则会报 `No deployments available for selected model`。
 
-Grok 思考深度有两种做法：
-
-1. 后台拆成 `grok-46-low` / `medium` / `high` / `xhigh`，各自带 `reasoning_effort`
-2. Cursor 模型名加后缀，由 hook 解析，例如 `grok-46-high-thinking-xhigh`
-
-自定义名在 Cursor 里没有上下文滑条。用模型名覆盖：
-
-```text
-grok-46-high[context=500k]
-```
-
-hook 会剥掉后缀，并把 `max_input_tokens` 设成 `500000`。
+Grok 思考深度用独立 Public Model Name：`grok-46-low` / `grok-46-medium` / `grok-46-high` / `grok-46-xhigh`。Cursor 里直接填这些名字，不要加 `-thinking-*` 或 `[context=...]`。Cursor Settings 不会解析这类后缀。
 
 ## Virtual Key
 
@@ -207,17 +196,7 @@ https://你的域名/cursor/chat/completions
 openai/responses/gpt-5.6-sol
 ```
 
-Cursor 可能给模型名追加后缀。本仓库 hook 会处理：
-
-```text
-claude-opus-4-8-thinking-high
-claude-opus-4-8-thinking-high-fast
-grok-46-high[context=256k]
-```
-
-请求真正打到 LiteLLM 之前，会变成基础模型名，并带上对应的 `reasoning_effort` 或 `max_input_tokens`。后台不必为每个 thinking 档位再加一条模型。
-
-Cursor 会拦截和内置模型撞名的自定义名。官方 Grok 名容易被拦，所以用 `grok-46-*`；Claude 则尽量用 Cursor 已认识的名字。
+Cursor 会拦截和内置模型撞名的自定义名。官方 Grok 名容易被拦，所以用 `grok-46-*`；Claude 则尽量用 Cursor 已认识的名字。Grok 在 Cursor 中填写 `grok-46-high` 这类独立档位名。
 
 ## `call_id_hook.py` 做什么
 
@@ -229,7 +208,7 @@ litellm_settings:
   callbacks: /app/call_id_hook.proxy_handler_instance
 ```
 
-`drop_params: true` 会丢掉上游不认识的参数，避免多余字段把请求打挂。
+`drop_params: true` 会丢掉上游不认识的参数，避免多余字段把请求打挂。hook 不再解析 `-thinking-*` 或 `[context=...]`。
 
 ### 1. 补 Responses 的 `created_at`
 
@@ -248,33 +227,6 @@ Invalid user message at index 0
 ```
 
 hook 会把 `tool_result` 抽成 `role: tool`，并把其余文本收成普通 user 消息。
-
-### 4. 解析 `-thinking-{effort}`
-
-匹配：
-
-```text
-{base}-thinking-{none|minimal|low|medium|high|xhigh}[-fast]
-```
-
-例如 `claude-opus-4-8-thinking-high` 会改成模型 `claude-opus-4-8`，并写入：
-
-```text
-reasoning_effort: high
-reasoning.effort: high
-```
-
-### 5. 解析 `[context=XXXk]`
-
-匹配模型名中的：
-
-```text
-[context=128k]
-[context=0.5m]
-[context=200000]
-```
-
-去掉这段后缀，并把 `max_input_tokens` 设成对应数字。`k` 按 1000，`m` 按 1000000。
 
 Claude 渠道现在不再使用 `openai/responses/claude-*`，而是使用：
 
@@ -297,7 +249,7 @@ API Base：https://api.orangecc.cc
 | LiteLLM UI → Request Logs | 默认常按 Chat Completions 过滤 |
 | PostgreSQL spend logs | 实际落库记录，包含 `call_type=responses` |
 
-Grok 走 `openai/responses/` 时，日志的 `call_type` 经常是 `responses`；Claude 改成 Anthropic 后应按 `anthropic` 方向排查。Request Logs 默认视图可能看不到，但数据库里有。换过滤器或直接查库，不要以为 hook 把日志滤掉了。
+Grok 走 `openai/responses/` 时，日志的 `call_type` 经常是 `responses`；Claude 改成 Anthropic 后应按 `anthropic` 方向排查。Request Logs 默认视图可能看不到，但数据库里有。换过滤器或直接查库。
 
 排查时保留 Request ID。不要把 API Key、Authorization Header 或完整凭据贴到公开地方。
 
@@ -315,8 +267,8 @@ Cursor 发了非 OpenAI 形状的 user 消息。确认镜像已包含当前 `cal
 **Cursor 提示模型名无效，或 `already available as ...`**
 自定义名和 Cursor 内置名冲突。Grok 用 `grok-46-*` 这类名字。
 
-**自定义 Grok 没有上下文滑条**
-在 Cursor 模型名后加 `[context=500k]`。
+**自定义 Grok 显示 200k 上下文**
+Cursor Settings 里的自定义模型名不会解析 `[context=...]`。直接用 `grok-46-high`。若聊天模型选择器有 Edit，再在那里改 Context。
 
 **主线 GPT 500，fallback 也失败**
 确认 `gpt-5.6-sol-pro` 还在，且协议、地址、密钥都可用。fallback 名字对不上等于没有兜底。
