@@ -10,6 +10,9 @@ services:
       DATABASE_URL: postgresql://litellm:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/litellm
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY is required}
       LITELLM_SALT_KEY: ${LITELLM_SALT_KEY:?LITELLM_SALT_KEY is required}
+      UI_USERNAME: ${UI_USERNAME:-admin}
+      UI_PASSWORD: ${UI_PASSWORD:?UI_PASSWORD is required}
+      PROXY_ADMIN_ID: ${PROXY_ADMIN_ID:-admin}
       PROXY_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3029}
       STORE_MODEL_IN_DB: "True"
       REDIS_HOST: redis
