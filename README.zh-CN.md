@@ -119,7 +119,7 @@ Model：你的公开模型名
 
 [![通过雨云一键部署](https://rainyun-apps.cn-nb1.rains3.com/materials/deploy-on-rainyun-cn.svg)](https://www.rainyun.com/Nzc5MDEw_)
 
-还没有雨云账号的话，打开 [https://www.rainyun.com/Nzc5MDEw_](https://www.rainyun.com/Nzc5MDEw_) 注册，建一个至少 `2 GB` 内存的项目，然后按 **[完整配置与故障排查](docs/configuration.md)** 做 Compose 导入、密钥、网站代理、备份和升级。
+还没有雨云账号的话，打开 [https://www.rainyun.com/Nzc5MDEw_](https://www.rainyun.com/Nzc5MDEw_) 注册，建一个至少 `2 GB` 内存的项目，然后按 **[完整配置与故障排查](docs/configuration.zh-CN.md)** 做 Compose 导入、密钥、网站代理、备份和升级。
 
 雨云模板是 LiteLLM + PostgreSQL。本地 Compose 另有 Redis。扩副本或需要跨实例限流、路由状态时，再把 Redis 加进云端。
 
@@ -135,7 +135,7 @@ Model：你的公开模型名
 
 雨云导入、资源配额、备份升级、安全清单和更长的故障排查：
 
-**[完整配置与故障排查](docs/configuration.md)**
+**[完整配置与故障排查](docs/configuration.zh-CN.md)** · [English](docs/configuration.md) · [日本語](docs/configuration.ja.md)
 
 ```sh
 node tests/check-static.mjs

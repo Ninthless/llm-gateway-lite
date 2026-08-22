@@ -119,7 +119,7 @@ Production in this project targets [Rainyun RCA](https://www.rainyun.com/Nzc5MDE
 
 [![Deploy on RainYun](https://rainyun-apps.cn-nb1.rains3.com/materials/deploy-on-rainyun-en.svg)](https://www.rainyun.com/Nzc5MDEw_)
 
-New to Rainyun? Open [https://www.rainyun.com/Nzc5MDEw_](https://www.rainyun.com/Nzc5MDEw_), create a project with at least `2 GB` RAM, then follow **[Configuration & troubleshooting](docs/configuration.md)** for Compose import, secrets, website proxy, backup, and upgrades.
+New to Rainyun? Open [https://www.rainyun.com/Nzc5MDEw_](https://www.rainyun.com/Nzc5MDEw_), create a project with at least `2 GB` RAM, then follow **[Configuration & troubleshooting](docs/configuration.md)** for Compose import, secrets, website proxy, backup, and upgrades. Also: [简体中文](docs/configuration.zh-CN.md) · [日本語](docs/configuration.ja.md).
 
 The Rainyun template is LiteLLM + PostgreSQL. Local Compose also runs Redis. Add Redis in the cloud when you scale replicas or need shared rate-limit and routing state.
 
@@ -135,7 +135,7 @@ The Rainyun template is LiteLLM + PostgreSQL. Local Compose also runs Redis. Add
 
 Rainyun import, resource sizing, backup, upgrades, security checklist, and longer troubleshooting:
 
-**[Configuration & troubleshooting](docs/configuration.md)** (Chinese)
+**[Configuration & troubleshooting](docs/configuration.md)** · [简体中文](docs/configuration.zh-CN.md) · [日本語](docs/configuration.ja.md)
 
 ```sh
 node tests/check-static.mjs

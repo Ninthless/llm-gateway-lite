@@ -1,173 +1,173 @@
-# LLM Gateway Lite 完整配置与故障排查
+# LLM Gateway Lite Configuration and Troubleshooting
 
-[English](../README.md) | **简体中文** | [日本語](../README.ja.md)
+**English** | [简体中文](configuration.zh-CN.md) | [日本語](configuration.ja.md)
 
-本文档以当前生产环境为准，覆盖雨云 RCA 云应用部署、云端运维、本地 Docker 测试、LiteLLM 后台、上游模型、Virtual Key、Cursor 接入、完整能力验证、备份升级和已知问题。
+This document matches the current production environment and covers Rainyun RCA cloud-app deploy, cloud ops, local Docker testing, LiteLLM admin UI, upstream models, Virtual Keys, Cursor setup, full capability verification, backup/upgrade, and known issues.
 
-当前生产部署使用雨云 RCA 云应用，LiteLLM 镜像由 GitHub Container Registry 提供，数据库使用 PostgreSQL。镜像内部固定 LiteLLM Proxy `v1.98.0-rc.1`。升级时先改 `litellm/Dockerfile` 中的固定版本，通过 CI 发布后再部署。
+The current production deployment uses Rainyun RCA cloud apps. The LiteLLM image is provided by GitHub Container Registry, and the database is PostgreSQL. The image pins LiteLLM Proxy `v1.98.0-rc.1`. To upgrade, first change the pinned version in `litellm/Dockerfile`, publish through CI, then deploy.
 
-## 1. 架构、端口与资源
+## 1. Architecture, Ports, and Resources
 
-本地 Docker Compose 包含三个容器：
+Local Docker Compose includes three containers:
 
-- `litellm`：LiteLLM Proxy、官方管理后台、OpenAI 兼容接口和 Cursor 接口
-- `db`：PostgreSQL，保存模型、凭据、Virtual Key、预算和用量数据
-- `redis`：路由协调、限流状态和缓存
+- `litellm`: LiteLLM Proxy, official admin UI, OpenAI-compatible API, and Cursor endpoint
+- `db`: PostgreSQL, stores models, credentials, Virtual Keys, budgets, and usage data
+- `redis`: route coordination, rate-limit state, and cache
 
-生产环境的雨云 RCA 模板包含两个容器：
+The production Rainyun RCA template includes two containers:
 
-- `litellm`：从 `ghcr.io/ninthless/llm-gateway-lite:latest` 拉取
-- `db`：PostgreSQL，通过 RCA 内网服务地址连接
+- `litellm`: pulled from `ghcr.io/ninthless/llm-gateway-lite:latest`
+- `db`: PostgreSQL, connected through the RCA internal service address
 
-Redis 在本地 Compose 中运行。当前雨云模板是 LiteLLM + PostgreSQL 两容器；扩容副本或需要跨实例限流、路由状态和缓存时，把 Redis 加入云端架构。
+Redis runs in local Compose. The current Rainyun template is a LiteLLM + PostgreSQL two-container setup. Add Redis to the cloud architecture when you scale replicas or need cross-instance rate limiting, routing state, and cache.
 
-对外入口（将域名替换为当前雨云网站代理域名）：
+Public entry points (replace the domain with your current Rainyun website-proxy domain):
 
-| 用途 | 本地地址 | 公网地址 |
+| Purpose | Local | Public |
 | --- | --- | --- |
-| 管理后台 | `http://localhost:3029/ui/` | `https://你的域名/ui/` |
-| 就绪检查 | `http://localhost:3029/health/readiness` | `https://你的域名/health/readiness` |
-| OpenAI 兼容接口 | `http://localhost:3029/v1/` | `https://你的域名/v1/` |
-| Cursor Base URL | `http://localhost:3029/cursor` | `https://你的域名/cursor` |
+| Admin UI | `http://localhost:3029/ui/` | `https://your-domain/ui/` |
+| Readiness check | `http://localhost:3029/health/readiness` | `https://your-domain/health/readiness` |
+| OpenAI-compatible API | `http://localhost:3029/v1/` | `https://your-domain/v1/` |
+| Cursor Base URL | `http://localhost:3029/cursor` | `https://your-domain/cursor` |
 
-日常入口是 `/ui/`、`/v1/` 和 `/cursor`。本地与雨云 Compose 将 `NO_DOCS`、`NO_REDOC`、`NO_OPENAPI` 设为 `True`。
+Day-to-day entry points are `/ui/`, `/v1/`, and `/cursor`. Local and Rainyun Compose set `NO_DOCS`, `NO_REDOC`, and `NO_OPENAPI` to `True`.
 
-本地 Docker 空闲实测：
+Local Docker idle measurements:
 
-- LiteLLM：约 `740-761 MiB`
-- PostgreSQL：约 `55-57 MiB`
-- 合计：约 `795-818 MiB`
+- LiteLLM: about `740-761 MiB`
+- PostgreSQL: about `55-57 MiB`
+- Total: about `795-818 MiB`
 
-当前云端部署建议：
+Current cloud deploy recommendations:
 
-- 首次启动或迁移：LiteLLM `2 vCPU`、`2048 MB`
-- 稳定低并发：LiteLLM `1 vCPU`、`1024 MB`
-- PostgreSQL：`0.5 vCPU`、`256 MB`
-- 项目可用内存：至少 `2 GB`
-- LiteLLM 副本数：`1`
-- Worker 数：`1`
+- First start or migration: LiteLLM `2 vCPU`, `2048 MB`
+- Stable low concurrency: LiteLLM `1 vCPU`, `1024 MB`
+- PostgreSQL: `0.5 vCPU`, `256 MB`
+- Available project memory: at least `2 GB`
+- LiteLLM replica count: `1`
+- Worker count: `1`
 
-本地测试建议与云端相同。个人 Cursor 网关保持单副本；跨实例限流、路由状态和缓存需要共享 Redis 和负载均衡。
+Use the same sizing for local testing. Keep a personal Cursor gateway at a single replica; cross-instance rate limiting, routing state, and cache require shared Redis and a load balancer.
 
-`1024 MB` 只适合个人低并发。Agent 长任务、并行工具调用或数据库迁移期间出现 OOM 时，将 LiteLLM 提高到 `2048 MB`。
+`1024 MB` is only suitable for personal low concurrency. If OOM occurs during long Agent tasks, parallel tool calls, or database migrations, raise LiteLLM to `2048 MB`.
 
-## 2. 密钥说明
+## 2. Secrets
 
-部署需要三个互不相同的随机值：
+Deploy with three distinct random values:
 
-| 变量 | 用途 | 要求 |
+| Variable | Purpose | Requirement |
 | --- | --- | --- |
-| `LITELLM_MASTER_KEY` | 后台管理员密码和最高权限 API Key | 必须以 `sk-` 开头 |
-| `LITELLM_SALT_KEY` | 加密数据库中的上游凭据 | 必须以 `sk-` 开头，添加模型后不可更换 |
-| `POSTGRES_PASSWORD` | PostgreSQL 用户密码 | 使用长随机值 |
+| `LITELLM_MASTER_KEY` | Admin UI password and highest-privilege API Key | Must start with `sk-` |
+| `LITELLM_SALT_KEY` | Encrypts upstream credentials in the database | Must start with `sk-`; do not change it after you add models |
+| `POSTGRES_PASSWORD` | PostgreSQL user password | Use a long random value |
 
-安全要求：
+Security requirements:
 
-- 真实密钥留在本机 `.env` 或部署平台，不进入 Git
-- Cursor 只使用受限的 Virtual Key
-- Master Key、Salt Key 只给网关和管理后台使用
-- `LITELLM_SALT_KEY` 用于加密模型凭据后保持不变
-- 完整 Virtual Key 通常只显示一次，创建后立即保存
-- 曾出现在聊天、截图、日志或公开仓库中的密钥应立即撤销并重新生成
+- Keep real secrets on the local `.env` or the deploy platform, never in Git
+- Cursor uses only a restricted Virtual Key
+- Master Key and Salt Key are for the gateway and admin UI only
+- Keep `LITELLM_SALT_KEY` unchanged after it has encrypted model credentials
+- The full Virtual Key is usually shown only once; save it immediately after creation
+- Immediately revoke and regenerate any secret that has appeared in chat, screenshots, logs, or a public repository
 
-## 3. 本地部署
+## 3. Local Deploy
 
-### 3.1 前置条件
+### 3.1 Prerequisites
 
-安装 Docker Desktop 或 Docker Engine，并确认 Docker Compose 可用。
+Install Docker Desktop or Docker Engine, and confirm Docker Compose is available.
 
-### 3.2 生成 `.env`
+### 3.2 Generate `.env`
 
-Windows PowerShell：
+Windows PowerShell:
 
 ```powershell
 .\scripts\init.ps1
 ```
 
-Linux 或 macOS：
+Linux or macOS:
 
 ```sh
 chmod +x ./scripts/init.sh
 ./scripts/init.sh
 ```
 
-脚本会生成：
+The script generates:
 
 ```text
-LITELLM_MASTER_KEY=sk-随机值
-LITELLM_SALT_KEY=sk-随机值
-POSTGRES_PASSWORD=随机值
+LITELLM_MASTER_KEY=sk-random-value
+LITELLM_SALT_KEY=sk-random-value
+POSTGRES_PASSWORD=random-value
 PUBLIC_BASE_URL=http://localhost:3029
 ```
 
-如果 `.env` 已存在，脚本不会覆盖。
+If `.env` already exists, the script does not overwrite it.
 
-### 3.3 启动
+### 3.3 Start
 
 ```sh
 docker compose up -d --build
 docker compose ps
 ```
 
-查看日志：
+View logs:
 
 ```sh
 docker compose logs -f litellm
 docker compose logs -f db
 ```
 
-访问 `http://localhost:3029/health/readiness`。返回成功后打开 `http://localhost:3029/ui/`。
+Open `http://localhost:3029/health/readiness`. After it returns success, open `http://localhost:3029/ui/`.
 
-后台登录信息：
+Admin UI login:
 
 ```text
-用户名：.env 中的 UI_USERNAME，默认 admin
-密码：.env 中的 UI_PASSWORD
+Username: UI_USERNAME in .env, default admin
+Password: UI_PASSWORD in .env
 ```
 
-### 3.4 停止与清理
+### 3.4 Stop and Clean Up
 
-停止容器并保留数据：
+Stop containers and keep data:
 
 ```sh
 docker compose down
 ```
 
-删除容器和全部本地数据库数据：
+Remove containers and all local database data:
 
 ```sh
 docker compose down -v
 ```
 
-`docker compose down -v` 会删除本地数据库卷，只在确认要清空数据时使用。
+`docker compose down -v` deletes the local database volume. Use it only when you intend to wipe the data.
 
-## 4. 当前生产环境：雨云 RCA 云应用部署
+## 4. Current Production: Rainyun RCA Cloud-App Deploy
 
-当前项目不是普通 VPS 上手工运行 Docker，而是部署在雨云 RCA（Rain Cloud Apps）云应用中。RCA 基于容器编排运行应用，支持多容器 Compose 导入、容器间内网服务发现、资源限制、持久化卷和网站代理。
+This project is not Docker run by hand on a generic VPS. It is deployed as a Rainyun RCA (Rain Cloud Apps) cloud app. RCA runs apps on container orchestration and supports multi-container Compose import, internal service discovery between containers, resource limits, persistent volumes, and website proxy.
 
-[![通过雨云一键部署](https://rainyun-apps.cn-nb1.rains3.com/materials/deploy-on-rainyun-cn.svg)](https://www.rainyun.com/Nzc5MDEw_)
+[![Deploy on RainYun](https://rainyun-apps.cn-nb1.rains3.com/materials/deploy-on-rainyun-en.svg)](https://www.rainyun.com/Nzc5MDEw_)
 
-新账号用 [这个雨云链接](https://www.rainyun.com/Nzc5MDEw_) 进入控制台，再按下面步骤导入 `rainyun-compose.yml`。
+New accounts should use [this Rainyun link](https://www.rainyun.com/Nzc5MDEw_) to open the console, then follow the steps below to import `rainyun-compose.yml`.
 
-控制台名称可能随版本变化；本文中的“应用模板”“版本编辑”和“从 Docker 导入”以当前控制台对应入口为准。雨云官方资料确认，Compose 导入后的容器可以通过 `${rca_svc_[容器名]_[服务名]}` 获取另一个容器的内网地址。
+Console names may change across versions; in this document, `应用模板` (app template), `版本编辑` (version editor), and `从 Docker 导入` (import from Docker) refer to the matching entries in the current console. Rainyun official docs confirm that after Compose import, a container can get another container's internal address through `${rca_svc_[container-name]_[service-name]}`.
 
-### 4.1 当前部署拓扑
+### 4.1 Current Deploy Topology
 
 ```text
 Cursor
   ↓ HTTPS
-雨云网站代理 / 自定义域名
-  ↓ 外部服务 api:4000
+Rainyun website proxy / custom domain
+  ↓ external service api:4000
 litellm
   ↓ ${rca_svc_db_postgres}:5432
 PostgreSQL
 ```
 
-公网只暴露 LiteLLM 的 `4000` 服务。PostgreSQL 使用内部服务，不应暴露到公网。
+Only LiteLLM's `4000` service is exposed to the public internet. PostgreSQL uses an internal service and must not be exposed publicly.
 
-### 4.2 生成三个密钥
+### 4.2 Generate Three Secrets
 
-Windows PowerShell 5.1 及以上：
+Windows PowerShell 5.1 and later:
 
 ```powershell
 function New-RandomSecret {
@@ -190,464 +190,464 @@ $salt
 $postgres
 ```
 
-分别保存为 `LITELLM_MASTER_KEY`、`LITELLM_SALT_KEY` 和 `POSTGRES_PASSWORD`。
+Save them as `LITELLM_MASTER_KEY`, `LITELLM_SALT_KEY`, and `POSTGRES_PASSWORD`.
 
-### 4.3 导入 Compose
+### 4.3 Import Compose
 
-1. 登录雨云控制台并进入“云应用”。
-2. 创建项目，确保至少还有 `2 GB` 可分配内存。
-3. 创建个人应用模板和新版本。
-4. 选择“从 Docker 导入”。
-5. 导入仓库根目录的 `rainyun-compose.yml`。
-6. 确认出现 `litellm` 和 `db` 两个容器。
-7. 确认 `litellm` 暴露 `4000/TCP`，`db` 只提供 `5432/TCP` 内部服务。
+1. Sign in to the Rainyun console and open `云应用` (cloud apps).
+2. Create a project and make sure at least `2 GB` of memory is still available to allocate.
+3. Create a personal `应用模板` (app template) and a new version.
+4. Choose `从 Docker 导入` (import from Docker).
+5. Import `rainyun-compose.yml` from the repository root.
+6. Confirm that both the `litellm` and `db` containers appear.
+7. Confirm that `litellm` exposes `4000/TCP` and that `db` only provides the `5432/TCP` internal service.
 
-`rainyun-compose.yml` 使用可直接解析的占位值。雨云导入器只解析平台生成的 `${rca_svc_*}` 引用；其余密钥在导入界面把 `replace-with-...` 换成真实值后再安装。
+`rainyun-compose.yml` uses placeholders that can be parsed as-is. The Rainyun importer only resolves platform-generated `${rca_svc_*}` references; replace the remaining `replace-with-...` secrets with real values in the import UI before you install.
 
-`litellm` 服务设置了 `pull_policy: always`。雨云保留该字段时，每次重新部署都会检查并拉取项目 `latest` 镜像。该设置不会定时重建应用，也不会自动更新 `litellm/Dockerfile` 中固定的 LiteLLM 基础版本；升级仍需先修改固定版本、通过 CI 发布新镜像，再在雨云重新部署。
+The `litellm` service sets `pull_policy: always`. When Rainyun keeps that field, every redeploy checks and pulls the project's `latest` image. This setting does not rebuild the app on a schedule, and it does not automatically update the LiteLLM base version pinned in `litellm/Dockerfile`. Upgrades still require changing the pinned version, publishing a new image through CI, then redeploying on Rainyun.
 
-### 4.4 配置 `litellm` 容器
+### 4.4 Configure the `litellm` Container
 
-资源：
+Resources:
 
 ```text
-首次启动 CPU：2000m
-首次启动内存：2048 MB
-稳定后可尝试 CPU：1000m
-稳定后可尝试内存：1024 MB
+First start CPU: 2000m
+First start memory: 2048 MB
+After stable, you can try CPU: 1000m
+After stable, you can try memory: 1024 MB
 ```
 
-环境变量：
+Environment variables:
 
 ```text
-DATABASE_URL=postgresql://litellm:数据库密码@${rca_svc_db_postgres}/litellm
-LITELLM_MASTER_KEY=sk-你的MasterKey
-LITELLM_SALT_KEY=sk-你的SaltKey
+DATABASE_URL=postgresql://litellm:database-password@${rca_svc_db_postgres}/litellm
+LITELLM_MASTER_KEY=sk-your-MasterKey
+LITELLM_SALT_KEY=sk-your-SaltKey
 STORE_MODEL_IN_DB=True
 NO_DOCS=True
 NO_REDOC=True
 NO_OPENAPI=True
 ```
 
-要求：
+Requirements:
 
-- `DATABASE_URL` 只替换密码部分
-- 必须保留 `${rca_svc_db_postgres}`
-- Command 和 Args 保持为空
-- 镜像自带启动参数为 `--config /app/config.yaml --port 4000 --num_workers 1`
+- In `DATABASE_URL`, replace only the password portion
+- Keep `${rca_svc_db_postgres}`
+- Keep Command and Args empty
+- The image ships with startup args `--config /app/config.yaml --port 4000 --num_workers 1`
 
-启动失败时保持 Command 和 Args 为空，让镜像使用内置的 `--config /app/config.yaml --port 4000 --num_workers 1`。
+If startup fails, keep Command and Args empty so the image uses the built-in `--config /app/config.yaml --port 4000 --num_workers 1`.
 
-外部服务：
-
-```text
-服务名称：api
-显示名称：LiteLLM
-服务类型：外部访问
-内部端口：4000
-协议：TCP
-```
-
-### 4.5 配置 `db` 容器
-
-资源：
+External service:
 
 ```text
-CPU：500m
-内存：256 MB
+Service name: api
+Display name: LiteLLM
+Service type: external access
+Internal port: 4000
+Protocol: TCP
 ```
 
-环境变量：
+### 4.5 Configure the `db` Container
+
+Resources:
+
+```text
+CPU: 500m
+Memory: 256 MB
+```
+
+Environment variables:
 
 ```text
 POSTGRES_DB=litellm
 POSTGRES_USER=litellm
-POSTGRES_PASSWORD=与 DATABASE_URL 完全相同的数据库密码
+POSTGRES_PASSWORD=same database password as DATABASE_URL
 ```
 
-内部服务：
+Internal service:
 
 ```text
-服务名称：postgres
-显示名称：PostgreSQL
-服务类型：内部访问
-内部端口：5432
-协议：TCP
+Service name: postgres
+Display name: PostgreSQL
+Service type: internal access
+Internal port: 5432
+Protocol: TCP
 ```
 
-`${rca_svc_db_postgres}` 依赖容器名 `db` 和服务名 `postgres`，这两个名称保持不变。
+`${rca_svc_db_postgres}` depends on container name `db` and service name `postgres`. Keep both names unchanged.
 
-### 4.6 配置数据库持久化
+### 4.6 Configure Database Persistence
 
-确认 `db` 容器存在：
+Confirm the `db` container has:
 
 ```text
-名称：postgres-data
-挂载路径：/var/lib/postgresql/data
-子路径：llm-gateway-lite/postgres
-内容类型：目录
+Name: postgres-data
+Mount path: /var/lib/postgresql/data
+Subpath: llm-gateway-lite/postgres
+Content type: directory
 ```
 
-没有持久化挂载时，容器重建会丢失模型、上游凭据、Virtual Key、预算和用量记录。
+Without a persistence mount, rebuilding the container drops models, upstream credentials, Virtual Keys, budgets, and usage records.
 
-### 4.7 安装与 HTTPS
+### 4.7 Install and HTTPS
 
-1. 确认页面中不存在任何 `replace-with-` 占位值。
-2. 保存模板版本并安装应用。
-3. 等待 PostgreSQL 初始化和 LiteLLM 数据库迁移完成。
-4. 在网站管理中添加“应用代理”网站。
-5. 选择 `litellm` 容器的 `api` 服务。
-6. 使用雨云域名或自定义域名。
-7. 启用 HTTPS。
+1. Confirm the page contains no `replace-with-` placeholders.
+2. Save the template version and install the app.
+3. Wait for PostgreSQL initialization and LiteLLM database migrations to finish.
+4. In website management, add an `应用代理` (app proxy) site.
+5. Select the `api` service on the `litellm` container.
+6. Use a Rainyun domain or a custom domain.
+7. Enable HTTPS.
 
-普通后台和 Cursor 接入不要求设置 `PROXY_BASE_URL`。只有使用 SSO 或 MCP OAuth 等需要生成外部回调地址的能力时，才添加：
+Ordinary admin UI and Cursor access do not require `PROXY_BASE_URL`. Add it only when you use capabilities that generate external callback URLs, such as SSO or MCP OAuth:
 
 ```text
-PROXY_BASE_URL=https://你的域名
+PROXY_BASE_URL=https://your-domain
 ```
 
-该值只包含协议和域名，不带尾斜杠或路径。
+The value is protocol plus domain only, with no trailing slash or path.
 
-按顺序检查：
+Check in this order:
 
 ```text
-https://你的域名/health/liveliness
-https://你的域名/health/readiness
-https://你的域名/ui/
-https://你的域名/cursor
+https://your-domain/health/liveliness
+https://your-domain/health/readiness
+https://your-domain/ui/
+https://your-domain/cursor
 ```
 
-访问 `/cursor` 返回 `307` 并跳转到 `/cursor/` 属于正常行为。直接访问 `/cursor/` 且没有 API Key 时返回 `401`，说明路由存在且鉴权生效。
+A `307` from `/cursor` to `/cursor/` is expected. Hitting `/cursor/` with no API Key and getting `401` means the route exists and auth is in effect.
 
-## 5. LiteLLM 后台配置
+## 5. LiteLLM Admin UI Setup
 
-### 5.1 登录
+### 5.1 Sign In
 
-打开 `https://你的域名/ui/`。
+Open `https://your-domain/ui/`.
 
-本地 Compose 使用 `.env` 中的 `UI_USERNAME` / `UI_PASSWORD`。雨云模板未设置这两项时，后台密码是 `LITELLM_MASTER_KEY`，用户名默认 `admin`。
+Local Compose uses `UI_USERNAME` / `UI_PASSWORD` from `.env`. When the Rainyun template does not set those two, the admin UI password is `LITELLM_MASTER_KEY` and the username defaults to `admin`.
 
-### 5.2 添加普通 OpenAI 官方模型
+### 5.2 Add a Standard Official OpenAI Model
 
-进入 `Models + Endpoints` → `Add Model`：
+Go to `Models + Endpoints` → `Add Model`:
 
 ```text
-Provider：OpenAI
-Public Model Name：gpt-4.1
-LiteLLM Model Name：openai/gpt-4.1
-API Key：OpenAI API Key
-API Base：留空
+Provider: OpenAI
+Public Model Name: gpt-4.1
+LiteLLM Model Name: openai/gpt-4.1
+API Key: OpenAI API Key
+API Base: leave empty
 ```
 
-### 5.3 添加普通 OpenAI 兼容上游
+### 5.3 Add a Standard OpenAI-Compatible Upstream
 
 ```text
-Provider：OpenAI 或 OpenAI Compatible
-Public Model Name：my-model
-LiteLLM Model Name：openai/上游实际模型名
-API Key：上游 API Key
-API Base：https://上游地址/v1
+Provider: OpenAI or OpenAI Compatible
+Public Model Name: my-model
+LiteLLM Model Name: openai/actual-upstream-model-name
+API Key: upstream API Key
+API Base: https://upstream-host/v1
 ```
 
-`API Base` 填写 API 根地址，例如 `https://api.orangecc.cc/v1` 或 `https://api.orangecc.cc`。
+Set `API Base` to the API root, for example `https://api.orangecc.cc/v1` or `https://api.orangecc.cc`.
 
-### 5.4 添加 Anthropic 官方模型
+### 5.4 Add an Official Anthropic Model
 
 ```text
-Provider：Anthropic
-Public Model Name：claude-sonnet
-LiteLLM Model Name：anthropic/上游实际模型名
-API Key：Anthropic 兼容上游 API Key
-API Base：https://上游根地址
+Provider: Anthropic
+Public Model Name: claude-sonnet
+LiteLLM Model Name: anthropic/actual-upstream-model-name
+API Key: Anthropic-compatible upstream API Key
+API Base: https://upstream-root
 ```
 
-OrangeCC 的 Kiro Claude 渠道使用：
+For OrangeCC's Kiro Claude channel, use:
 
 ```text
-LiteLLM Model Name：anthropic/claude-sonnet-5
-API Base：https://api.orangecc.cc
+LiteLLM Model Name: anthropic/claude-sonnet-5
+API Base: https://api.orangecc.cc
 ```
 
-LiteLLM 按 Anthropic 协议请求该渠道，Request Logs 显示 `anthropic`。Grok 和 GPT 使用 `openai/responses/...`，对应 OrangeCC 的 OpenAI Responses 入口。
+LiteLLM calls that channel with the Anthropic protocol, and Request Logs show `anthropic`. Grok and GPT use `openai/responses/...`, which maps to OrangeCC's OpenAI Responses entry.
 
-Azure OpenAI 必须选择 Azure Provider，并按 Azure 的部署名、Endpoint 和 API Version 配置，不能套用普通 OpenAI 兼容示例。
+Azure OpenAI must use the Azure Provider and be configured with Azure's deployment name, Endpoint, and API Version. Do not reuse the ordinary OpenAI-compatible example.
 
-### 5.5 字段含义
+### 5.5 Field Meanings
 
-- `Public Model Name`：LiteLLM 对客户端公开的名称，也是 Cursor 中添加的模型名称
-- `LiteLLM Model Name`：LiteLLM 用于选择供应商、协议和上游模型的内部名称
-- `API Base`：上游 API 根地址
-- `API Key`：上游供应商密钥，由 LiteLLM 使用 Salt Key 加密后保存
-- `RPM`、`TPM`：上游部署的请求和 Token 限制，不确定时留空
+- `Public Model Name`: the name LiteLLM exposes to clients, and the model name you add in Cursor
+- `LiteLLM Model Name`: LiteLLM's internal name for choosing the vendor, protocol, and upstream model
+- `API Base`: upstream API root
+- `API Key`: upstream vendor secret; LiteLLM encrypts it with the Salt Key before saving
+- `RPM`, `TPM`: request and token limits of the upstream deployment; leave empty if unsure
 
-同一个 Public Model Name 可以配置多个部署，由 LiteLLM 路由。上游实际模型名从供应商文档或 `/v1/models` 获取。
+The same Public Model Name can have multiple deployments; LiteLLM routes among them. Get the actual upstream model name from the vendor docs or `/v1/models`.
 
-## 6. Responses-only 上游配置
+## 6. Responses-only Upstream Setup
 
-部分 OpenAI 兼容上游虽然公开 `/v1/chat/completions`，但会拒绝该路径，只允许 `/v1/responses`。典型表现：
+Some OpenAI-compatible upstreams expose `/v1/chat/completions` but reject that path and only allow `/v1/responses`. Typical symptom:
 
 ```text
 Provider returned error:
 litellm.APIError: APIError: OpenAIException - Your request was blocked.
-Received Model Group=模型名
+Received Model Group=model-name
 Available Model Group Fallbacks=None
 code=403
 ```
 
-先分别测试上游：
+Test the upstream separately first:
 
-- `/v1/chat/completions` 返回 `403 Your request was blocked`
-- `/v1/responses` 正常返回
+- `/v1/chat/completions` returns `403 Your request was blocked`
+- `/v1/responses` returns normally
 
-Cursor 走 Chat Completions。对外保留 Public Model Name，内部改为 Responses 桥接，并在 Playground 用 `/v1/chat/completions` 验证：
+Cursor uses Chat Completions. Keep the Public Model Name for clients, switch the internals to a Responses bridge, and verify in Playground with `/v1/chat/completions`:
 
 ```text
-Public Model Name：gpt-5.6-sol
-LiteLLM Model Name：openai/responses/gpt-5.6-sol
-API Base：https://xfpa.orangecc.cc/v1
-Provider：OpenAI
+Public Model Name: gpt-5.6-sol
+LiteLLM Model Name: openai/responses/gpt-5.6-sol
+API Base: https://xfpa.orangecc.cc/v1
+Provider: OpenAI
 ```
 
-LiteLLM Params 中的 `model` 也应为：
+The `model` in LiteLLM Params should also be:
 
 ```text
 openai/responses/gpt-5.6-sol
 ```
 
-`openai/responses/` 会让 LiteLLM 接受 `/v1/chat/completions` 请求，在内部调用上游 Responses API，再返回标准 Chat Completions 形状。Cursor 中填写 Public Model Name `gpt-5.6-sol`。
+`openai/responses/` makes LiteLLM accept `/v1/chat/completions` requests, call the upstream Responses API internally, then return a standard Chat Completions shape. In Cursor, enter Public Model Name `gpt-5.6-sol`.
 
-修改后必须在 Playground 中选择：
-
-```text
-Endpoint Type：/v1/chat/completions
-Model：gpt-5.6-sol
-```
-
-只有该测试成功，才证明 Cursor 所需路径已经桥接成功。
-
-普通 Chat Completions 上游保持 `openai/上游模型名`。只接受 `/v1/responses`、或明确走 Responses 的模型才使用 `openai/responses/`。
-
-## 7. 创建 Virtual Key
-
-1. 在 Playground 完成 `/v1/chat/completions` 测试。
-2. 进入 `Virtual Keys`。
-3. 选择 `Create New Key`。
-4. 设置便于识别的 Alias。
-5. Models 只选择需要开放的 Public Model Name。
-6. 按需设置预算、RPM、TPM 和过期时间。
-7. 创建后立即保存完整 Key。
-
-Cursor 使用 Virtual Key。Master Key、Salt Key 和上游供应商 Key 只给网关使用。如果 Key 的 Models 列表不包含目标 Public Model Name，请求会因模型访问限制失败。
-
-## 8. Cursor 配置
-
-在 Cursor 的 Models 设置中：
-
-1. 启用 OpenAI API Key。
-2. 填写 LiteLLM 创建的 Virtual Key。
-3. 启用 `Override OpenAI Base URL`。
-4. Base URL 填写 `https://你的域名/cursor`。
-5. 添加 LiteLLM 的 Public Model Name。
-6. 选择该模型开始测试。
-
-示例：
+After the change, you must select this in Playground:
 
 ```text
-Base URL：https://你的域名/cursor
-API Key：LiteLLM Virtual Key
-Model：gpt-5.6-sol
+Endpoint Type: /v1/chat/completions
+Model: gpt-5.6-sol
 ```
 
-本项目的 Cursor 入口是 `/cursor`，模型名是 Public Model Name。Grok 填写 `grok-46-high` 这类档位名。
+Only a successful test here proves the path Cursor needs is bridged.
 
-## 9. 完整能力验证
+Keep ordinary Chat Completions upstreams as `openai/upstream-model-name`. Use `openai/responses/` only for models that accept `/v1/responses` only, or that you explicitly send through Responses.
 
-普通文本成功只证明基础生成可用。Agent 工具链按下面分级验证。
+## 7. Create a Virtual Key
 
-### 9.1 后台验证
+1. Finish the `/v1/chat/completions` test in Playground.
+2. Open `Virtual Keys`.
+3. Choose `Create New Key`.
+4. Set a recognizable Alias.
+5. In Models, select only the Public Model Names you want to expose.
+6. Set budget, RPM, TPM, and expiration as needed.
+7. Save the full Key immediately after creation.
 
-在 LiteLLM Playground 中：
+Cursor uses a Virtual Key. Master Key, Salt Key, and upstream vendor keys are for the gateway only. If the key's Models list does not include the target Public Model Name, the request fails due to model access limits.
 
-1. 选择 `/v1/chat/completions`。
-2. 选择目标 Public Model Name。
-3. 发送普通消息。
-4. 确认非流式或流式返回正常。
-5. 确认没有 `403`、模型不存在或参数错误。
+## 8. Cursor Setup
 
-### 9.2 Cursor 分级验证
+In Cursor Models settings:
 
-按顺序测试：
+1. Enable OpenAI API Key.
+2. Paste the Virtual Key created in LiteLLM.
+3. Enable `Override OpenAI Base URL`.
+4. Set Base URL to `https://your-domain/cursor`.
+5. Add the LiteLLM Public Model Name.
+6. Select that model and start testing.
 
-1. Ask：普通多轮文本对话
-2. Plan：读取仓库并生成计划
-3. Agent：读取文件和搜索代码
-4. Agent：执行终端命令
-5. Agent：创建临时文件
-6. Agent：读取并修改临时文件
-7. Agent：删除临时文件
-8. Agent：连续调用多个工具
-9. Agent：工具结果返回后继续推理
-10. Agent：确认 Git 工作区无测试残留
+Example:
 
-当前已验证的 `gpt-5.6-sol` 链路：
+```text
+Base URL: https://your-domain/cursor
+API Key: LiteLLM Virtual Key
+Model: gpt-5.6-sol
+```
+
+This project's Cursor entry is `/cursor`, and the model name is the Public Model Name. For Grok, enter a tier name such as `grok-46-high`.
+
+## 9. Full Capability Verification
+
+A successful plain-text reply only proves basic generation works. Verify the Agent toolchain in the stages below.
+
+### 9.1 Admin UI Verification
+
+In LiteLLM Playground:
+
+1. Select `/v1/chat/completions`.
+2. Select the target Public Model Name.
+3. Send an ordinary message.
+4. Confirm that non-streaming or streaming responses are normal.
+5. Confirm there is no `403`, missing model, or parameter error.
+
+### 9.2 Cursor Staged Verification
+
+Test in this order:
+
+1. Ask: ordinary multi-turn text chat
+2. Plan: read the repository and produce a plan
+3. Agent: read files and search code
+4. Agent: run terminal commands
+5. Agent: create a temporary file
+6. Agent: read and modify the temporary file
+7. Agent: delete the temporary file
+8. Agent: call multiple tools in sequence
+9. Agent: continue reasoning after tool results return
+10. Agent: confirm the Git working tree has no test leftovers
+
+Currently verified `gpt-5.6-sol` path:
 
 ```text
 Cursor
 → LiteLLM /cursor
 → /v1/chat/completions
-→ openai/responses/gpt-5.6-sol 桥接
-→ 上游 /v1/responses
+→ openai/responses/gpt-5.6-sol bridge
+→ upstream /v1/responses
 ```
 
-已实际通过：
+Already verified in practice:
 
-- 多轮对话
-- Web 搜索
-- 文件枚举
-- 代码搜索
-- 文件读取
-- 文件创建
-- 文件修改
-- 文件删除
-- PowerShell 和 Python 终端命令
-- Git 状态检查
-- 多工具并行调用
-- 工具结果回传后的继续推理
+- Multi-turn chat
+- Web search
+- File listing
+- Code search
+- File read
+- File create
+- File edit
+- File delete
+- PowerShell and Python terminal commands
+- Git status check
+- Parallel multi-tool calls
+- Continued reasoning after tool results return
 
-这不自动保证所有高级能力。图片理解、超长上下文、MCP、复杂工具参数、工具失败自动恢复和长时间 Agent 任务仍需按实际模型与使用场景专项验证。
+This does not automatically guarantee every advanced capability. Image understanding, very long context, MCP, complex tool arguments, automatic recovery from tool failures, and long-running Agent tasks still need targeted verification against the actual model and usage scenario.
 
-## 10. 云端日常运维、备份与升级
+## 10. Cloud Day-to-Day Ops, Backup, and Upgrades
 
-### 10.1 日常检查
+### 10.1 Daily Checks
 
-每次修改模型、密钥或雨云版本后，按以下顺序检查：
+After every change to models, secrets, or a Rainyun version, check in this order:
 
 ```text
-1. 雨云应用状态：litellm 和 db 都是运行中
-2. https://你的域名/health/liveliness
-3. https://你的域名/health/readiness
-4. https://你的域名/ui/
-5. LiteLLM Logs 是否完成启动和数据库迁移
-6. Playground 使用 /v1/chat/completions 测试一个模型
-7. Cursor 依次测试 Ask、Plan、Agent
+1. Rainyun app status: litellm and db are both running
+2. https://your-domain/health/liveliness
+3. https://your-domain/health/readiness
+4. https://your-domain/ui/
+5. LiteLLM Logs show startup and database migrations completed
+6. In Playground, test one model with /v1/chat/completions
+7. In Cursor, test Ask, Plan, and Agent in order
 ```
 
-`liveliness` 主要证明进程存活，`readiness` 还要考虑数据库和服务是否已准备好。网站能打开不等于模型链路可用。
+`liveliness` mainly proves the process is alive; `readiness` also considers whether the database and services are ready. A site that opens does not mean the model path works.
 
-### 10.2 雨云重新部署
+### 10.2 Redeploy on Rainyun
 
-当前 `rainyun-compose.yml` 使用：
+The current `rainyun-compose.yml` uses:
 
 ```text
 ghcr.io/ninthless/llm-gateway-lite:latest
 ```
 
-`pull_policy: always` 只表示重新部署时检查并拉取最新镜像，不表示镜像会自动定时更新。标准流程是：
+`pull_policy: always` only means a redeploy checks and pulls the latest image. It does not mean the image updates on a schedule. Standard flow:
 
-1. 修改 `litellm/Dockerfile` 或项目代码。
-2. 在 GitHub Actions 通过静态检查、Compose 检查和 smoke 检查。
-3. CI 成功后发布新的 GHCR 镜像。
-4. 在雨云重新部署应用，使 `litellm` 拉取新镜像。
-5. 观察 LiteLLM 日志，等待数据库迁移完成。
-6. 重新验证健康检查、后台登录、模型、Virtual Key 和 Cursor。
+1. Change `litellm/Dockerfile` or project code.
+2. Pass static checks, Compose checks, and smoke checks in GitHub Actions.
+3. After CI succeeds, publish the new GHCR image.
+4. Redeploy the app on Rainyun so `litellm` pulls the new image.
+5. Watch LiteLLM logs and wait for database migrations to finish.
+6. Re-verify health checks, admin UI login, models, Virtual Keys, and Cursor.
 
-如果只是修改后台中的模型、上游地址或 Virtual Key，不需要重建镜像；这些数据保存在 PostgreSQL 中。
+If you only change models, upstream URLs, or Virtual Keys in the admin UI, you do not need to rebuild the image; that data lives in PostgreSQL.
 
-### 10.3 必须一起备份
+### 10.3 Backup These Together
 
-必须一起备份：
+Always back up together:
 
-- PostgreSQL 持久化卷
+- PostgreSQL persistent volume
 - `LITELLM_SALT_KEY`
 - `LITELLM_MASTER_KEY`
 - `POSTGRES_PASSWORD`
 
-只备份数据库但丢失 Salt Key，已加密的上游 API Key 无法恢复。
+If you back up only the database and lose the Salt Key, encrypted upstream API Keys cannot be recovered.
 
-### 10.4 升级流程
+### 10.4 Upgrade Procedure
 
-升级流程：
+Upgrade procedure:
 
-1. 备份数据库卷和三个密钥。
-2. 在测试环境修改 `litellm/Dockerfile` 的固定版本。
-3. 重新构建镜像。
-4. 验证数据库迁移。
-5. 验证后台登录、模型读取和上游凭据解密。
-6. 验证 Virtual Key 权限。
-7. 验证 Ask、Plan、Agent、工具调用、文件编辑和流式输出。
-8. 验证后再更新生产环境。
+1. Back up the database volume and the three secrets.
+2. In a test environment, change the pinned version in `litellm/Dockerfile`.
+3. Rebuild the image.
+4. Verify database migrations.
+5. Verify admin UI login, model reads, and upstream credential decryption.
+6. Verify Virtual Key permissions.
+7. Verify Ask, Plan, Agent, tool calls, file edits, and streaming output.
+8. Update production only after verification.
 
-生产钉住 `litellm/Dockerfile` 中的固定版本。LiteLLM 的 `/cursor`、Responses 桥接、参数转换和 Admin UI 行为都可能随版本变化。
+Production pins the version in `litellm/Dockerfile`. LiteLLM `/cursor`, Responses bridging, parameter translation, and Admin UI behavior can all change across versions.
 
-## 11. 已知问题与排查
+## 11. Known Issues and Troubleshooting
 
-### 11.1 雨云返回 `Bad Gateway` 或 `no available server`
+### 11.1 Rainyun Returns `Bad Gateway` or `no available server`
 
-含义：HTTPS 网站已建立，但容器 `4000` 端口后没有可用的 LiteLLM 进程。
+Meaning: the HTTPS site is up, but there is no available LiteLLM process behind container port `4000`.
 
-处理：
+Action:
 
-1. 首次启动给 LiteLLM `2 vCPU`、`2048 MB`。
-2. 保持 Command 和 Args 为空。
-3. 检查三个占位密钥是否全部替换。
-4. 检查 `DATABASE_URL` 是否保留 `${rca_svc_db_postgres}`。
-5. 检查数据库密码与 `POSTGRES_PASSWORD` 是否完全一致。
-6. 检查 `db` 容器名、`postgres` 服务名和 `5432` 端口。
-7. 查看 LiteLLM 日志中的 Prisma migration 错误。
-8. 先检查 `/health/liveliness`，再检查 `/health/readiness`。
+1. Give LiteLLM `2 vCPU` and `2048 MB` on first start.
+2. Keep Command and Args empty.
+3. Check that all three placeholder secrets were replaced.
+4. Check that `DATABASE_URL` still contains `${rca_svc_db_postgres}`.
+5. Check that the database password matches `POSTGRES_PASSWORD` exactly.
+6. Check the `db` container name, `postgres` service name, and `5432` port.
+7. Look for Prisma migration errors in LiteLLM logs.
+8. Check `/health/liveliness` first, then `/health/readiness`.
 
-如果 LiteLLM 完全没有日志，优先检查容器命令是否被雨云表单覆盖，以及内存是否不足以启动。
+If LiteLLM has no logs at all, first check whether the container command was overwritten by the Rainyun form, and whether memory is too low to start.
 
-### 11.2 PostgreSQL 出现 locale 或 `trust` 警告
+### 11.2 PostgreSQL Shows Locale or `trust` Warnings
 
-`postgres:16-alpine` 使用 musl，可能出现：
+`postgres:16-alpine` uses musl and may show:
 
 ```text
 locale: not found
 no usable system locales were found
 ```
 
-初始化期间也可能看到本地 Unix Socket 使用 `trust` 的提示。只要日志最终出现：
+During init you may also see a note that the local Unix socket uses `trust`. As long as the logs eventually show:
 
 ```text
 database system is ready to accept connections
 ```
 
-数据库即已就绪。初始化过程中临时启动、关闭并再次正式启动属于正常流程。
+the database is ready. A temporary start, stop, and official start again during initialization is expected.
 
-### 11.3 LiteLLM 一直重启
+### 11.3 LiteLLM Keeps Restarting
 
-检查：
+Check:
 
-- `DATABASE_URL` 是否正确
-- `${rca_svc_db_postgres}` 是否保留
-- 数据库密码是否一致
-- `LITELLM_MASTER_KEY` 和 `LITELLM_SALT_KEY` 是否非空且以 `sk-` 开头
-- PostgreSQL 是否已就绪
-- Prisma migration 是否失败
-- 内存是否发生 OOM
+- Whether `DATABASE_URL` is correct
+- Whether `${rca_svc_db_postgres}` is preserved
+- Whether the database password matches
+- Whether `LITELLM_MASTER_KEY` and `LITELLM_SALT_KEY` are non-empty and start with `sk-`
+- Whether PostgreSQL is ready
+- Whether Prisma migration failed
+- Whether memory hit OOM
 
-### 11.4 后台无法登录
+### 11.4 Cannot Sign In to the Admin UI
 
-本地用 `UI_USERNAME` / `UI_PASSWORD`。雨云模板未设置这两项时，用户名默认 `admin`，密码是 `LITELLM_MASTER_KEY`。修改 Master Key 或 UI 密码后重启 LiteLLM。Virtual Key 只用于 API。
+Locally, use `UI_USERNAME` / `UI_PASSWORD`. When the Rainyun template does not set those two, the username defaults to `admin` and the password is `LITELLM_MASTER_KEY`. Restart LiteLLM after you change the Master Key or UI password. Virtual Keys are for the API only.
 
-### 11.5 添加模型后调用失败
+### 11.5 Calls Fail After Adding a Model
 
-按顺序检查：
+Check in this order:
 
-1. API Base 是否为正确的 API 根地址
-2. LiteLLM Model Name 是否包含正确供应商前缀
-3. 上游实际模型名是否存在
-4. 上游 API Key 是否有效
-5. 上游支持 Chat Completions 还是 Responses
-6. Playground 的目标 Endpoint Type 是否与 Cursor 路径一致
-7. Virtual Key 是否允许该 Public Model Name
+1. Whether API Base is the correct API root
+2. Whether LiteLLM Model Name includes the correct vendor prefix
+3. Whether the actual upstream model name exists
+4. Whether the upstream API Key is valid
+5. Whether the upstream supports Chat Completions or Responses
+6. Whether Playground's target Endpoint Type matches the Cursor path
+7. Whether the Virtual Key allows that Public Model Name
 
-先在后台 Playground 测试，再测试 Cursor。
+Test in the admin UI Playground first, then test Cursor.
 
-### 11.6 Cursor 返回 `403 Your request was blocked`
+### 11.6 Cursor Returns `403 Your request was blocked`
 
-如果 LiteLLM 错误中同时出现：
+If the LiteLLM error also includes:
 
 ```text
 OpenAIException - Your request was blocked
@@ -655,109 +655,109 @@ Received Model Group=...
 Available Model Group Fallbacks=None
 ```
 
-这通常是上游拒绝 LiteLLM 发出的 Chat Completions 请求。
+this usually means the upstream rejected the Chat Completions request sent by LiteLLM.
 
-确认上游 `/v1/responses` 可用而 `/v1/chat/completions` 被拒绝后，将 LiteLLM Model Name 改为：
+After you confirm that upstream `/v1/responses` works and `/v1/chat/completions` is rejected, change LiteLLM Model Name to:
 
 ```text
-openai/responses/上游实际模型名
+openai/responses/actual-upstream-model-name
 ```
 
-Public Model Name 保持不变，然后在 Playground 使用 `/v1/chat/completions` 重新测试。
+Keep Public Model Name unchanged, then retest in Playground with `/v1/chat/completions`.
 
-### 11.7 Playground 的 Responses 测试成功，但 Cursor 失败
+### 11.7 Playground Responses Test Succeeds, but Cursor Fails
 
-原因：Playground 直接测试 `/v1/responses` 没有覆盖 Cursor 的 Chat Completions 入口。
+Cause: testing `/v1/responses` directly in Playground does not cover Cursor's Chat Completions entry.
 
-解决：在 Playground 中明确选择 `/v1/chat/completions`。Responses-only 上游使用 `openai/responses/` 内部模型名。
+Fix: explicitly select `/v1/chat/completions` in Playground. For Responses-only upstreams, use the `openai/responses/` internal model name.
 
-### 11.8 普通对话成功，但 Agent 工具失败
+### 11.8 Ordinary Chat Works, but Agent Tools Fail
 
-普通对话不会覆盖：
+Ordinary chat does not cover:
 
-- Tool schema 转换
-- Tool call 流式事件
-- 多轮 Tool result
-- 并行工具调用
-- 文件编辑
-- 终端调用
+- Tool schema translation
+- Tool call streaming events
+- Multi-turn Tool result
+- Parallel tool calls
+- File edits
+- Terminal calls
 
-执行第 9 节完整能力验证。若失败，在 LiteLLM Logs 中根据 Request ID 检查请求参数和上游错误。
+Run the full capability verification in section 9. If it fails, use the Request ID in LiteLLM Logs to inspect request parameters and upstream errors.
 
 ### 11.9 `Available Model Group Fallbacks=None`
 
-这表示目标 Model Group 没有配置可用回退。真正原因通常位于同一错误中的上游状态码和消息。
+This means the target Model Group has no usable fallback configured. The real cause is usually the upstream status code and message in the same error.
 
-个人单上游部署可以不配置 fallback；需要高可用时，应给同一个 Public Model Name 添加多个可用部署或显式配置 fallback，并分别验证协议兼容性。
+A personal single-upstream deploy can skip fallback. For high availability, add multiple working deployments under the same Public Model Name or configure fallback explicitly, and verify protocol compatibility for each.
 
-### 11.10 Cursor Base URL 配错
+### 11.10 Wrong Cursor Base URL
 
-本项目使用：
+This project uses:
 
 ```text
-https://你的域名/cursor
+https://your-domain/cursor
 ```
 
-访问 `/cursor` 的 `307` 跳转和未鉴权 `/cursor/` 的 `401` 均属于正常现象。
+A `307` redirect from `/cursor` and a `401` from unauthenticated `/cursor/` are both expected.
 
-### 11.11 Virtual Key 无权访问模型
+### 11.11 Virtual Key Cannot Access the Model
 
-检查 Virtual Key 的 Models 列表是否包含目标 Public Model Name。Cursor 填写的是 Public Model Name。
+Check whether the Virtual Key's Models list includes the target Public Model Name. Cursor fills in the Public Model Name.
 
-### 11.12 重建后数据丢失
+### 11.12 Data Loss After Rebuild
 
-检查 `db` 是否持久化挂载：
+Check that `db` has a persistence mount:
 
 ```text
 /var/lib/postgresql/data
 ```
 
-保留 Docker Volume 和雨云共享磁盘中的对应子路径。
+Keep the corresponding subpath in the Docker Volume and the Rainyun shared disk.
 
-### 11.13 更换 Salt Key 后上游凭据失效
+### 11.13 Upstream Credentials Fail After Changing Salt Key
 
-Salt Key 用于加密数据库中的上游凭据。恢复原 Salt Key，或重新录入所有上游 API Key。无法通过新 Salt Key 解密旧数据。
+The Salt Key encrypts upstream credentials in the database. Restore the original Salt Key, or re-enter every upstream API Key. A new Salt Key cannot decrypt old data.
 
-### 11.14 内存不足或频繁重启
+### 11.14 Out of Memory or Frequent Restarts
 
-处理：
+Action:
 
-- LiteLLM 提高到 `1536-2048 MB`
-- 项目总内存保持至少 `2 GB`
-- 保持 `--num_workers 1`
-- 个人部署只运行一个 LiteLLM 副本
-- 首次迁移完成后再尝试降低资源
+- Raise LiteLLM to `1536-2048 MB`
+- Keep total project memory at least `2 GB`
+- Keep `--num_workers 1`
+- Run only one LiteLLM replica for a personal deploy
+- Try lowering resources only after the first migration has finished
 
-### 11.15 雨云 Compose 导入提示缺失环境变量
+### 11.15 Rainyun Compose Import Reports Missing Environment Variables
 
-雨云导入阶段不能解析任意嵌套 `${VAR}`。使用仓库提供的 `rainyun-compose.yml`，只保留平台要求的 `${rca_svc_db_postgres}`，其余密钥先使用占位值并在导入界面替换。
+Rainyun cannot resolve arbitrary nested `${VAR}` during import. Use the repository `rainyun-compose.yml`, keep only the platform-required `${rca_svc_db_postgres}`, and use placeholders for the other secrets, then replace them in the import UI.
 
-### 11.16 GHCR 镜像拉取失败
+### 11.16 GHCR Image Pull Fails
 
-确认：
+Confirm:
 
-- 镜像名为 `ghcr.io/ninthless/llm-gateway-lite:latest`
-- GitHub Packages 对该镜像允许公开匿名拉取
-- 雨云节点可以访问 GHCR
-- 镜像构建工作流已经成功发布对应架构
+- The image name is `ghcr.io/ninthless/llm-gateway-lite:latest`
+- GitHub Packages allows public anonymous pulls for that image
+- The Rainyun node can reach GHCR
+- The image build workflow has successfully published the matching architecture
 
-### 11.17 修改模型后配置没有更新
+### 11.17 Model Config Does Not Update After Editing
 
-进入模型详情确认：
+Open the model details and confirm:
 
-- 顶部 `LiteLLM Model` 已显示新值
-- `LiteLLM Params` 中的 `model` 已显示新值
-- 页面出现保存成功提示
+- The top `LiteLLM Model` already shows the new value
+- `model` in `LiteLLM Params` already shows the new value
+- The page shows a save-success message
 
-然后回到 Playground 重新选择模型。必要时刷新模型列表。
+Then go back to Playground and reselect the model. Refresh the model list if needed.
 
-### 11.18 日志中的 Request ID
+### 11.18 Request ID in Logs
 
-Cursor 报错时保留完整错误和 Request ID。使用 LiteLLM `Logs` 按时间、模型和状态码定位对应请求。API Key、Authorization Header 和完整凭据只放在私密渠道。
+When Cursor errors, keep the full error and Request ID. Use LiteLLM `Logs` to locate the matching request by time, model, and status code. Put API Key, Authorization Header, and full credentials only in private channels.
 
-### 11.19 OrangeCC 返回 Cloudflare `502 Bad gateway`
+### 11.19 OrangeCC Returns Cloudflare `502 Bad gateway`
 
-如果错误正文包含：
+If the error body contains:
 
 ```text
 orangecc.cc | 502: Bad gateway
@@ -765,46 +765,46 @@ Cloudflare
 api.orangecc.cc
 ```
 
-这表示 LiteLLM 已经把请求发到 OrangeCC，但 OrangeCC 的 Cloudflare 到其源站之间没有拿到正常响应。先核对模型协议：
+LiteLLM already sent the request to OrangeCC, but OrangeCC's Cloudflare did not get a normal response from the origin. First check the model protocol:
 
-- GPT / Grok：`openai/responses/...` 和上游 `/v1/responses`
-- Claude：`anthropic/claude-*` 和 OrangeCC Anthropic 渠道
+- GPT / Grok: `openai/responses/...` and upstream `/v1/responses`
+- Claude: `anthropic/claude-*` and the OrangeCC Anthropic channel
 
-Claude 当前配置：
+Current Claude config:
 
 ```text
-LiteLLM Model Name：anthropic/claude-sonnet-5
-API Base：https://api.orangecc.cc
+LiteLLM Model Name: anthropic/claude-sonnet-5
+API Base: https://api.orangecc.cc
 ```
 
-在同一台云端环境复测，并记录时间、模型和 Request ID。直连和 LiteLLM 都返回 Cloudflare 502 时，联系上游或等待上游恢复。
+Retest in the same cloud environment and record the time, model, and Request ID. If both a direct call and LiteLLM return Cloudflare 502, contact the upstream or wait for it to recover.
 
-### 11.20 Request Logs 显示 `openai` 或 `anthropic`
+### 11.20 Request Logs Show `openai` or `anthropic`
 
-Request Logs 中的 Provider 取决于 LiteLLM Model Name 的前缀：
+The Provider in Request Logs depends on the LiteLLM Model Name prefix:
 
 ```text
 openai/responses/grok-4.6  → openai
 anthropic/claude-sonnet-5  → anthropic
 ```
 
-Request Logs 里的 `openai` 表示 LiteLLM 选择了 OpenAI Responses 适配器，目标仍是配置的 API Base。Claude 使用 `anthropic/claude-*`。
+`openai` in Request Logs means LiteLLM selected the OpenAI Responses adapter; the target is still the configured API Base. Claude uses `anthropic/claude-*`.
 
-## 12. 安全清单
+## 12. Security Checklist
 
-- 公网只暴露 LiteLLM `4000` 服务，经 HTTPS 网站代理
-- PostgreSQL `5432` 仅内部访问
-- 雨云网站代理指向 LiteLLM 的 `api:4000`
-- Cursor 只使用受限 Virtual Key，并设置模型范围、预算和限速
-- Master Key 和 Salt Key 只给网关使用
-- `.env` 留在本机或部署平台
-- Salt Key 用于加密凭据后保持不变
-- 定期备份数据库卷与三个密钥
-- 上游或 Virtual Key 一旦泄露立即撤销
-- 升级前在测试环境验证完整 Agent 工具链
-- 生产升级前确认 GHCR 镜像构建成功并保留上一版本回滚信息
+- Expose only the LiteLLM `4000` service publicly, through an HTTPS website proxy
+- Keep PostgreSQL `5432` internal-only
+- Point the Rainyun website proxy at LiteLLM `api:4000`
+- Cursor uses only a restricted Virtual Key, with model scope, budget, and rate limits
+- Master Key and Salt Key are for the gateway only
+- Keep `.env` on the local machine or the deploy platform
+- Keep the Salt Key unchanged after it has encrypted credentials
+- Regularly back up the database volume and the three secrets
+- Revoke upstream or Virtual Keys immediately if they leak
+- Verify the full Agent toolchain in a test environment before upgrading
+- Before a production upgrade, confirm the GHCR image built successfully and keep rollback information for the previous version
 
-## 13. 项目检查命令
+## 13. Project Check Commands
 
 ```sh
 node tests/check-static.mjs
@@ -813,7 +813,7 @@ docker compose -f rainyun-compose.yml config --no-interpolate --quiet
 docker build -t llm-gateway-lite ./litellm
 ```
 
-运行状态：
+Runtime status:
 
 ```sh
 docker compose ps
@@ -821,7 +821,7 @@ docker compose logs -f litellm
 docker compose logs -f db
 ```
 
-## 14. 资料来源
+## 14. Sources
 
 - [LiteLLM Docker Quickstart](https://docs.litellm.ai/docs/proxy/docker_quick_start)
 - [LiteLLM Admin UI](https://docs.litellm.ai/docs/proxy/ui)
@@ -833,9 +833,9 @@ docker compose logs -f db
 - [LiteLLM Cursor Integration](https://docs.litellm.ai/docs/tutorials/cursor_integration)
 - [LiteLLM Production Deployment](https://docs.litellm.ai/docs/proxy/deploy)
 - [LiteLLM Production Best Practices](https://docs.litellm.ai/docs/proxy/prod)
-- [LiteLLM Proxy Configs：NO_DOCS / NO_REDOC](https://docs.litellm.ai/docs/proxy/configs)
-- [雨云推广入口](https://www.rainyun.com/Nzc5MDEw_)
-- [雨云云应用 Docker Compose 更新公告](https://forum.rainyun.com/t/topic/12843)
-- [雨云 App 版本制作教程](https://forum.rainyun.com/t/topic/11296)
-- [雨云云应用快速上手](https://www.rainyun.com/docs/products/rca/start.html)
-- [雨云应用管理](https://www.rainyun.com/docs/products/rca/project/apps.html)
+- [LiteLLM Proxy Configs: NO_DOCS / NO_REDOC](https://docs.litellm.ai/docs/proxy/configs)
+- [Rainyun referral](https://www.rainyun.com/Nzc5MDEw_)
+- [Rainyun cloud apps Docker Compose update](https://forum.rainyun.com/t/topic/12843)
+- [Rainyun app version tutorial](https://forum.rainyun.com/t/topic/11296)
+- [Rainyun cloud apps quick start](https://www.rainyun.com/docs/products/rca/start.html)
+- [Rainyun app management](https://www.rainyun.com/docs/products/rca/project/apps.html)

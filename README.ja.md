@@ -119,7 +119,7 @@ UI の **Models + Endpoints** を開きます。
 
 [![Deploy on RainYun](https://rainyun-apps.cn-nb1.rains3.com/materials/deploy-on-rainyun-en.svg)](https://www.rainyun.com/Nzc5MDEw_)
 
-Rainyun が初めてなら [https://www.rainyun.com/Nzc5MDEw_](https://www.rainyun.com/Nzc5MDEw_) から登録し、メモリ `2 GB` 以上のプロジェクトを作ってから **[設定とトラブルシュート](docs/configuration.md)**（中国語）で Compose 取り込み、秘密情報、サイトプロキシ、バックアップ、アップグレードを進めてください。
+Rainyun が初めてなら [https://www.rainyun.com/Nzc5MDEw_](https://www.rainyun.com/Nzc5MDEw_) から登録し、メモリ `2 GB` 以上のプロジェクトを作ってから **[設定とトラブルシュート](docs/configuration.ja.md)** で Compose 取り込み、秘密情報、サイトプロキシ、バックアップ、アップグレードを進めてください。
 
 Rainyun テンプレートは LiteLLM + PostgreSQL です。ローカル Compose は Redis も含みます。レプリカを増やす、またはレート制限とルーティング状態を共有するときにクラウドへ Redis を足します。
 
@@ -135,7 +135,7 @@ Rainyun テンプレートは LiteLLM + PostgreSQL です。ローカル Compose
 
 Rainyun の取り込み、リソース、バックアップ、アップグレード、セキュリティ確認、長いトラブルシュート:
 
-**[設定とトラブルシュート](docs/configuration.md)**（中国語）
+**[設定とトラブルシュート](docs/configuration.ja.md)** · [English](docs/configuration.md) · [简体中文](docs/configuration.zh-CN.md)
 
 ```sh
 node tests/check-static.mjs
