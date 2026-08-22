@@ -1,5 +1,7 @@
 # LLM Gateway Lite 完整配置与故障排查
 
+[English](../README.md) | **简体中文** | [日本語](../README.ja.md)
+
 本文档以当前生产环境为准，覆盖雨云 RCA 云应用部署、云端运维、本地 Docker 测试、LiteLLM 后台、上游模型、Virtual Key、Cursor 接入、完整能力验证、备份升级和已知问题。
 
 当前生产部署使用雨云 RCA 云应用，LiteLLM 镜像由 GitHub Container Registry 提供，数据库使用 PostgreSQL。镜像内部固定 LiteLLM Proxy `v1.98.0-rc.1`。升级时先改 `litellm/Dockerfile` 中的固定版本，通过 CI 发布后再部署。
@@ -142,6 +144,10 @@ docker compose down -v
 ## 4. 当前生产环境：雨云 RCA 云应用部署
 
 当前项目不是普通 VPS 上手工运行 Docker，而是部署在雨云 RCA（Rain Cloud Apps）云应用中。RCA 基于容器编排运行应用，支持多容器 Compose 导入、容器间内网服务发现、资源限制、持久化卷和网站代理。
+
+[![通过雨云一键部署](https://rainyun-apps.cn-nb1.rains3.com/materials/deploy-on-rainyun-cn.svg)](https://www.rainyun.com/Nzc5MDEw_)
+
+新账号用 [这个雨云链接](https://www.rainyun.com/Nzc5MDEw_) 进入控制台，再按下面步骤导入 `rainyun-compose.yml`。
 
 控制台名称可能随版本变化；本文中的“应用模板”“版本编辑”和“从 Docker 导入”以当前控制台对应入口为准。雨云官方资料确认，Compose 导入后的容器可以通过 `${rca_svc_[容器名]_[服务名]}` 获取另一个容器的内网地址。
 
@@ -828,6 +834,7 @@ docker compose logs -f db
 - [LiteLLM Production Deployment](https://docs.litellm.ai/docs/proxy/deploy)
 - [LiteLLM Production Best Practices](https://docs.litellm.ai/docs/proxy/prod)
 - [LiteLLM Proxy Configs：NO_DOCS / NO_REDOC](https://docs.litellm.ai/docs/proxy/configs)
+- [雨云推广入口](https://www.rainyun.com/Nzc5MDEw_)
 - [雨云云应用 Docker Compose 更新公告](https://forum.rainyun.com/t/topic/12843)
 - [雨云 App 版本制作教程](https://forum.rainyun.com/t/topic/11296)
 - [雨云云应用快速上手](https://www.rainyun.com/docs/products/rca/start.html)
