@@ -7,6 +7,9 @@ services:
       LITELLM_MASTER_KEY: sk-replace-with-random-master-key
       LITELLM_SALT_KEY: sk-replace-with-random-salt-key
       STORE_MODEL_IN_DB: "True"
+      NO_DOCS: "True"
+      NO_REDOC: "True"
+      NO_OPENAPI: "True"
     ports:
       - "4000:4000"
 

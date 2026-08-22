@@ -2,7 +2,7 @@
 
 本文档以当前生产环境为准，覆盖雨云 RCA 云应用部署、云端运维、本地 Docker 测试、LiteLLM 后台、上游模型、Virtual Key、Cursor 接入、完整能力验证、备份升级和已知问题。
 
-当前生产部署使用雨云 RCA 云应用，LiteLLM 镜像由 GitHub Container Registry 提供，数据库使用 PostgreSQL。镜像内部固定 LiteLLM Proxy `v1.98.0-rc.1`。除非已经完成兼容性回归测试，不要自行替换为 `latest`。
+当前生产部署使用雨云 RCA 云应用，LiteLLM 镜像由 GitHub Container Registry 提供，数据库使用 PostgreSQL。镜像内部固定 LiteLLM Proxy `v1.98.0-rc.1`。升级时先改 `litellm/Dockerfile` 中的固定版本，通过 CI 发布后再部署。
 
 ## 1. 架构、端口与资源
 
@@ -17,7 +17,7 @@
 - `litellm`：从 `ghcr.io/ninthless/llm-gateway-lite:latest` 拉取
 - `db`：PostgreSQL，通过 RCA 内网服务地址连接
 
-Redis 只在本地 Compose 中显式运行。当前雨云单实例部署不依赖独立 Redis；如果以后扩容 LiteLLM 副本或需要跨实例限流、路由状态和缓存，应把 Redis 加入云端架构。
+Redis 在本地 Compose 中运行。当前雨云模板是 LiteLLM + PostgreSQL 两容器；扩容副本或需要跨实例限流、路由状态和缓存时，把 Redis 加入云端架构。
 
 对外入口（将域名替换为当前雨云网站代理域名）：
 
@@ -27,6 +27,8 @@ Redis 只在本地 Compose 中显式运行。当前雨云单实例部署不依�
 | 就绪检查 | `http://localhost:3029/health/readiness` | `https://你的域名/health/readiness` |
 | OpenAI 兼容接口 | `http://localhost:3029/v1/` | `https://你的域名/v1/` |
 | Cursor Base URL | `http://localhost:3029/cursor` | `https://你的域名/cursor` |
+
+日常入口是 `/ui/`、`/v1/` 和 `/cursor`。本地与雨云 Compose 将 `NO_DOCS`、`NO_REDOC`、`NO_OPENAPI` 设为 `True`。
 
 本地 Docker 空闲实测：
 
@@ -43,7 +45,7 @@ Redis 只在本地 Compose 中显式运行。当前雨云单实例部署不依�
 - LiteLLM 副本数：`1`
 - Worker 数：`1`
 
-本地测试建议与云端相同。不要在个人 Cursor 网关上盲目增加副本；没有共享 Redis 和负载均衡时，多副本会造成限流、路由状态和日志排查不一致。
+本地测试建议与云端相同。个人 Cursor 网关保持单副本；跨实例限流、路由状态和缓存需要共享 Redis 和负载均衡。
 
 `1024 MB` 只适合个人低并发。Agent 长任务、并行工具调用或数据库迁移期间出现 OOM 时，将 LiteLLM 提高到 `2048 MB`。
 
@@ -59,12 +61,12 @@ Redis 只在本地 Compose 中显式运行。当前雨云单实例部署不依�
 
 安全要求：
 
-- 不要把真实密钥提交到 Git
-- 不要把 Master Key 配置到 Cursor
+- 真实密钥留在本机 `.env` 或部署平台，不进入 Git
 - Cursor 只使用受限的 Virtual Key
-- `LITELLM_SALT_KEY` 一旦用于加密模型凭据就不能更换
+- Master Key、Salt Key 只给网关和管理后台使用
+- `LITELLM_SALT_KEY` 用于加密模型凭据后保持不变
 - 完整 Virtual Key 通常只显示一次，创建后立即保存
-- 任何曾出现在聊天、截图、日志或公开仓库中的密钥都应立即撤销并重新生成
+- 曾出现在聊天、截图、日志或公开仓库中的密钥应立即撤销并重新生成
 
 ## 3. 本地部署
 
@@ -135,7 +137,7 @@ docker compose down
 docker compose down -v
 ```
 
-`docker compose down -v` 不可恢复，不要把它当作普通重启命令。
+`docker compose down -v` 会删除本地数据库卷，只在确认要清空数据时使用。
 
 ## 4. 当前生产环境：雨云 RCA 云应用部署
 
@@ -194,7 +196,7 @@ $postgres
 6. 确认出现 `litellm` 和 `db` 两个容器。
 7. 确认 `litellm` 暴露 `4000/TCP`，`db` 只提供 `5432/TCP` 内部服务。
 
-`rainyun-compose.yml` 使用可直接解析的占位值。不要在导入前把普通变量改成嵌套 `${VAR}`；雨云导入器只应保留平台生成的 `${rca_svc_*}` 引用。当前文件中的 `replace-with-...` 都必须在导入界面替换，不能直接用于生产。
+`rainyun-compose.yml` 使用可直接解析的占位值。雨云导入器只解析平台生成的 `${rca_svc_*}` 引用；其余密钥在导入界面把 `replace-with-...` 换成真实值后再安装。
 
 `litellm` 服务设置了 `pull_policy: always`。雨云保留该字段时，每次重新部署都会检查并拉取项目 `latest` 镜像。该设置不会定时重建应用，也不会自动更新 `litellm/Dockerfile` 中固定的 LiteLLM 基础版本；升级仍需先修改固定版本、通过 CI 发布新镜像，再在雨云重新部署。
 
@@ -216,6 +218,9 @@ DATABASE_URL=postgresql://litellm:数据库密码@${rca_svc_db_postgres}/litellm
 LITELLM_MASTER_KEY=sk-你的MasterKey
 LITELLM_SALT_KEY=sk-你的SaltKey
 STORE_MODEL_IN_DB=True
+NO_DOCS=True
+NO_REDOC=True
+NO_OPENAPI=True
 ```
 
 要求：
@@ -225,7 +230,7 @@ STORE_MODEL_IN_DB=True
 - Command 和 Args 保持为空
 - 镜像自带启动参数为 `--config /app/config.yaml --port 4000 --num_workers 1`
 
-启动失败时不要在雨云控制台额外覆盖 Command 或 Args。覆盖后可能绕过镜像内置配置，导致 LiteLLM 没有读取 `/app/config.yaml` 或没有监听 `4000`。
+启动失败时保持 Command 和 Args 为空，让镜像使用内置的 `--config /app/config.yaml --port 4000 --num_workers 1`。
 
 外部服务：
 
@@ -264,7 +269,7 @@ POSTGRES_PASSWORD=与 DATABASE_URL 完全相同的数据库密码
 协议：TCP
 ```
 
-`${rca_svc_db_postgres}` 依赖容器名 `db` 和服务名 `postgres`，不要修改这两个名称。
+`${rca_svc_db_postgres}` 依赖容器名 `db` 和服务名 `postgres`，这两个名称保持不变。
 
 ### 4.6 配置数据库持久化
 
@@ -312,12 +317,9 @@ https://你的域名/cursor
 
 ### 5.1 登录
 
-打开 `https://你的域名/ui/`：
+打开 `https://你的域名/ui/`。
 
-```text
-用户名：admin
-密码：LITELLM_MASTER_KEY
-```
+本地 Compose 使用 `.env` 中的 `UI_USERNAME` / `UI_PASSWORD`。雨云模板未设置这两项时，后台密码是 `LITELLM_MASTER_KEY`，用户名默认 `admin`。
 
 ### 5.2 添加普通 OpenAI 官方模型
 
@@ -341,7 +343,7 @@ API Key：上游 API Key
 API Base：https://上游地址/v1
 ```
 
-`API Base` 填写 API 根地址，不要填写具体的 `/chat/completions` 或 `/responses` 路径。
+`API Base` 填写 API 根地址，例如 `https://api.orangecc.cc/v1` 或 `https://api.orangecc.cc`。
 
 ### 5.4 添加 Anthropic 官方模型
 
@@ -360,7 +362,7 @@ LiteLLM Model Name：anthropic/claude-sonnet-5
 API Base：https://api.orangecc.cc
 ```
 
-不要把这类 Claude 模型配置成 `openai/responses/claude-*`，否则 LiteLLM 会按 OpenAI Responses 协议发送，Request Logs 中也会显示 `openai`。Grok 和 GPT 等仍按上游实际协议使用 `openai/responses/...`。
+LiteLLM 按 Anthropic 协议请求该渠道，Request Logs 显示 `anthropic`。Grok 和 GPT 使用 `openai/responses/...`，对应 OrangeCC 的 OpenAI Responses 入口。
 
 Azure OpenAI 必须选择 Azure Provider，并按 Azure 的部署名、Endpoint 和 API Version 配置，不能套用普通 OpenAI 兼容示例。
 
@@ -372,7 +374,7 @@ Azure OpenAI 必须选择 Azure Provider，并按 Azure 的部署名、Endpoint 
 - `API Key`：上游供应商密钥，由 LiteLLM 使用 Salt Key 加密后保存
 - `RPM`、`TPM`：上游部署的请求和 Token 限制，不确定时留空
 
-同一个 Public Model Name 可以配置多个部署，由 LiteLLM 路由。上游实际模型名应从供应商文档或 `/v1/models` 获取，不要根据展示名称猜测。
+同一个 Public Model Name 可以配置多个部署，由 LiteLLM 路由。上游实际模型名从供应商文档或 `/v1/models` 获取。
 
 ## 6. Responses-only 上游配置
 
@@ -391,9 +393,7 @@ code=403
 - `/v1/chat/completions` 返回 `403 Your request was blocked`
 - `/v1/responses` 正常返回
 
-这种情况下，不能只因为 Playground 的 `/v1/responses` 测试成功就认为 Cursor 可用。Cursor 请求仍可能进入 Chat Completions 路径。
-
-应保留对外模型名，并把内部模型名改为 Responses 桥接形式：
+Cursor 走 Chat Completions。对外保留 Public Model Name，内部改为 Responses 桥接，并在 Playground 用 `/v1/chat/completions` 验证：
 
 ```text
 Public Model Name：gpt-5.6-sol
@@ -408,7 +408,7 @@ LiteLLM Params 中的 `model` 也应为：
 openai/responses/gpt-5.6-sol
 ```
 
-`openai/responses/` 会让 LiteLLM 接受 `/v1/chat/completions` 请求，在内部调用上游 Responses API，再返回标准 Chat Completions 形状。Cursor 中仍填写 Public Model Name `gpt-5.6-sol`，不能填写带前缀的内部名称。
+`openai/responses/` 会让 LiteLLM 接受 `/v1/chat/completions` 请求，在内部调用上游 Responses API，再返回标准 Chat Completions 形状。Cursor 中填写 Public Model Name `gpt-5.6-sol`。
 
 修改后必须在 Playground 中选择：
 
@@ -419,7 +419,7 @@ Model：gpt-5.6-sol
 
 只有该测试成功，才证明 Cursor 所需路径已经桥接成功。
 
-不要对所有模型盲目使用 `openai/responses/`。普通 Chat Completions-only 上游应保持普通 OpenAI 兼容配置；Responses-only 或明确需要 Responses 能力的模型才使用该前缀。
+普通 Chat Completions 上游保持 `openai/上游模型名`。只接受 `/v1/responses`、或明确走 Responses 的模型才使用 `openai/responses/`。
 
 ## 7. 创建 Virtual Key
 
@@ -431,13 +431,7 @@ Model：gpt-5.6-sol
 6. 按需设置预算、RPM、TPM 和过期时间。
 7. 创建后立即保存完整 Key。
 
-Cursor 应使用 Virtual Key，不应使用：
-
-- 上游供应商 API Key
-- `LITELLM_MASTER_KEY`
-- `LITELLM_SALT_KEY`
-
-如果 Key 的 Models 列表不包含目标 Public Model Name，请求会因模型访问限制失败。
+Cursor 使用 Virtual Key。Master Key、Salt Key 和上游供应商 Key 只给网关使用。如果 Key 的 Models 列表不包含目标 Public Model Name，请求会因模型访问限制失败。
 
 ## 8. Cursor 配置
 
@@ -458,20 +452,11 @@ API Key：LiteLLM Virtual Key
 Model：gpt-5.6-sol
 ```
 
-不要填写：
-
-```text
-https://你的域名/cursor/v1
-https://你的域名/v1
-https://你的域名/cursor/chat/completions
-openai/responses/gpt-5.6-sol
-```
-
-本项目的 Cursor 入口是 `/cursor`，模型名是 Public Model Name。Grok 填写 `grok-46-high` 这类独立档位名，不要加 `-thinking-*` 或 `[context=...]`。
+本项目的 Cursor 入口是 `/cursor`，模型名是 Public Model Name。Grok 填写 `grok-46-high` 这类档位名。
 
 ## 9. 完整能力验证
 
-普通文本成功只证明基础生成可用，不能证明 Agent 工具链完整可用。
+普通文本成功只证明基础生成可用。Agent 工具链按下面分级验证。
 
 ### 9.1 后台验证
 
@@ -586,7 +571,7 @@ ghcr.io/ninthless/llm-gateway-lite:latest
 7. 验证 Ask、Plan、Agent、工具调用、文件编辑和流式输出。
 8. 验证后再更新生产环境。
 
-不要直接把镜像改成 `latest`。LiteLLM 的 `/cursor`、Responses 桥接、参数转换和 Admin UI 行为都可能随版本变化。
+生产钉住 `litellm/Dockerfile` 中的固定版本。LiteLLM 的 `/cursor`、Responses 桥接、参数转换和 Admin UI 行为都可能随版本变化。
 
 ## 11. 已知问题与排查
 
@@ -638,12 +623,7 @@ database system is ready to accept connections
 
 ### 11.4 后台无法登录
 
-```text
-用户名：admin
-密码：LITELLM_MASTER_KEY
-```
-
-修改 Master Key 后重启 LiteLLM。不要使用 Virtual Key 登录管理后台。
+本地用 `UI_USERNAME` / `UI_PASSWORD`。雨云模板未设置这两项时，用户名默认 `admin`，密码是 `LITELLM_MASTER_KEY`。修改 Master Key 或 UI 密码后重启 LiteLLM。Virtual Key 只用于 API。
 
 ### 11.5 添加模型后调用失败
 
@@ -669,7 +649,7 @@ Received Model Group=...
 Available Model Group Fallbacks=None
 ```
 
-这通常不是 Cursor 本地权限问题，而是上游拒绝 LiteLLM 发出的 Chat Completions 请求。
+这通常是上游拒绝 LiteLLM 发出的 Chat Completions 请求。
 
 确认上游 `/v1/responses` 可用而 `/v1/chat/completions` 被拒绝后，将 LiteLLM Model Name 改为：
 
@@ -700,7 +680,7 @@ Public Model Name 保持不变，然后在 Playground 使用 `/v1/chat/completio
 
 ### 11.9 `Available Model Group Fallbacks=None`
 
-这表示目标 Model Group 没有配置可用回退，不是原始故障本身。真正原因通常位于同一错误中的上游状态码和消息。
+这表示目标 Model Group 没有配置可用回退。真正原因通常位于同一错误中的上游状态码和消息。
 
 个人单上游部署可以不配置 fallback；需要高可用时，应给同一个 Public Model Name 添加多个可用部署或显式配置 fallback，并分别验证协议兼容性。
 
@@ -712,11 +692,11 @@ Public Model Name 保持不变，然后在 Playground 使用 `/v1/chat/completio
 https://你的域名/cursor
 ```
 
-不要自行追加 `/v1` 或具体接口路径。访问 `/cursor` 的 `307` 跳转和未鉴权 `/cursor/` 的 `401` 均属于正常现象。
+访问 `/cursor` 的 `307` 跳转和未鉴权 `/cursor/` 的 `401` 均属于正常现象。
 
 ### 11.11 Virtual Key 无权访问模型
 
-检查 Virtual Key 的 Models 列表是否包含目标 Public Model Name。Cursor 使用的是 Public Model Name，不是 LiteLLM Model Name。
+检查 Virtual Key 的 Models 列表是否包含目标 Public Model Name。Cursor 填写的是 Public Model Name。
 
 ### 11.12 重建后数据丢失
 
@@ -726,7 +706,7 @@ https://你的域名/cursor
 /var/lib/postgresql/data
 ```
 
-不要删除 Docker Volume 或雨云共享磁盘中的对应子路径。
+保留 Docker Volume 和雨云共享磁盘中的对应子路径。
 
 ### 11.13 更换 Salt Key 后上游凭据失效
 
@@ -767,7 +747,7 @@ Salt Key 用于加密数据库中的上游凭据。恢复原 Salt Key，或重�
 
 ### 11.18 日志中的 Request ID
 
-Cursor 报错时保留完整错误和 Request ID。使用 LiteLLM `Logs` 按时间、模型和状态码定位对应请求。排查时不要公开 API Key、Authorization Header 或完整凭据。
+Cursor 报错时保留完整错误和 Request ID。使用 LiteLLM `Logs` 按时间、模型和状态码定位对应请求。API Key、Authorization Header 和完整凭据只放在私密渠道。
 
 ### 11.19 OrangeCC 返回 Cloudflare `502 Bad gateway`
 
@@ -779,21 +759,19 @@ Cloudflare
 api.orangecc.cc
 ```
 
-这表示 LiteLLM 已经把请求发到 OrangeCC，但 OrangeCC 的 Cloudflare 到其源站之间没有拿到正常响应。它通常不是 Cursor Base URL 或 Virtual Key 的问题。
+这表示 LiteLLM 已经把请求发到 OrangeCC，但 OrangeCC 的 Cloudflare 到其源站之间没有拿到正常响应。先核对模型协议：
 
-先根据模型协议判断：
+- GPT / Grok：`openai/responses/...` 和上游 `/v1/responses`
+- Claude：`anthropic/claude-*` 和 OrangeCC Anthropic 渠道
 
-- GPT / Grok：检查 `openai/responses/...` 配置和上游 `/v1/responses`
-- Claude：检查 `anthropic/claude-*` 配置和 OrangeCC Anthropic 渠道
-
-Claude 当前配置应为：
+Claude 当前配置：
 
 ```text
 LiteLLM Model Name：anthropic/claude-sonnet-5
 API Base：https://api.orangecc.cc
 ```
 
-不要因为错误页面来自 Cloudflare 就把 Claude 改回 `openai/responses/claude-*`。先在同一台云端环境复测，并记录时间、模型和 Request ID；如果直连和 LiteLLM 都返回 Cloudflare 502，应联系上游或等待上游恢复。
+在同一台云端环境复测，并记录时间、模型和 Request ID。直连和 LiteLLM 都返回 Cloudflare 502 时，联系上游或等待上游恢复。
 
 ### 11.20 Request Logs 显示 `openai` 或 `anthropic`
 
@@ -804,20 +782,17 @@ openai/responses/grok-4.6  → openai
 anthropic/claude-sonnet-5  → anthropic
 ```
 
-`openai/responses/claude-*` 中的 `openai` 不是日志过滤，也不是请求被发送到 api.openai.com，而是 LiteLLM 选择了 OpenAI Responses 适配器。Claude 使用 OrangeCC 原生 Anthropic 渠道时，应改为 `anthropic/claude-*`。
+Request Logs 里的 `openai` 表示 LiteLLM 选择了 OpenAI Responses 适配器，目标仍是配置的 API Base。Claude 使用 `anthropic/claude-*`。
 
 ## 12. 安全清单
 
-- 只公开 LiteLLM `4000` 服务
-- PostgreSQL 仅内部访问
-- 公网入口启用 HTTPS
-- 雨云网站代理只指向 LiteLLM 的 `api:4000` 服务
-- 不把 PostgreSQL 的 `5432` 服务设为外部访问
-- Cursor 只使用受限 Virtual Key
-- Virtual Key 设置模型范围、预算和限速
-- Master Key 和 Salt Key 不进入 Cursor
-- `.env` 不提交到 Git
-- Salt Key 不随意轮换
+- 公网只暴露 LiteLLM `4000` 服务，经 HTTPS 网站代理
+- PostgreSQL `5432` 仅内部访问
+- 雨云网站代理指向 LiteLLM 的 `api:4000`
+- Cursor 只使用受限 Virtual Key，并设置模型范围、预算和限速
+- Master Key 和 Salt Key 只给网关使用
+- `.env` 留在本机或部署平台
+- Salt Key 用于加密凭据后保持不变
 - 定期备份数据库卷与三个密钥
 - 上游或 Virtual Key 一旦泄露立即撤销
 - 升级前在测试环境验证完整 Agent 工具链
@@ -852,6 +827,7 @@ docker compose logs -f db
 - [LiteLLM Cursor Integration](https://docs.litellm.ai/docs/tutorials/cursor_integration)
 - [LiteLLM Production Deployment](https://docs.litellm.ai/docs/proxy/deploy)
 - [LiteLLM Production Best Practices](https://docs.litellm.ai/docs/proxy/prod)
+- [LiteLLM Proxy Configs：NO_DOCS / NO_REDOC](https://docs.litellm.ai/docs/proxy/configs)
 - [雨云云应用 Docker Compose 更新公告](https://forum.rainyun.com/t/topic/12843)
 - [雨云 App 版本制作教程](https://forum.rainyun.com/t/topic/11296)
 - [雨云云应用快速上手](https://www.rainyun.com/docs/products/rca/start.html)

@@ -15,6 +15,9 @@ services:
       PROXY_ADMIN_ID: ${PROXY_ADMIN_ID:-admin}
       PROXY_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3029}
       STORE_MODEL_IN_DB: "True"
+      NO_DOCS: "True"
+      NO_REDOC: "True"
+      NO_OPENAPI: "True"
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
