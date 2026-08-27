@@ -45,6 +45,7 @@ assert.match(config, /coordination_redis:/);
 assert.match(config, /redis_host: os\.environ\/REDIS_HOST/);
 assert.match(config, /callbacks: \/app\/call_id_hook\.proxy_handler_instance/);
 assert.match(dockerfile, /COPY call_id_hook\.py \/app\/call_id_hook\.py/);
-assert.match(config, /fallbacks:\s+- gpt-5\.6-sol:\s+- gpt-5\.6-sol-pro/);
+assert.match(config, /enable_pre_call_checks: true/);
+assert.doesNotMatch(config, /fallbacks:/);
 
 console.log("Static contracts passed");
