@@ -11,6 +11,7 @@ general_settings:
 
 litellm_settings:
   drop_params: true
+  reasoning_auto_summary: true
   callbacks: /app/call_id_hook.proxy_handler_instance
 
 router_settings:

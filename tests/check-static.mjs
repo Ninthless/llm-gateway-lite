@@ -32,6 +32,7 @@ assert.match(rainyunCompose, /LITELLM_SALT_KEY: sk-replace-with-random-salt-key/
 assert.match(rainyunCompose, /NO_DOCS: "True"/);
 assert.match(rainyunCompose, /NO_REDOC: "True"/);
 assert.match(rainyunCompose, /NO_OPENAPI: "True"/);
+assert.match(rainyunCompose, /LITELLM_REASONING_AUTO_SUMMARY: "True"/);
 assert.doesNotMatch(rainyunCompose, /PROXY_BASE_URL/);
 assert.equal(
   rainyunCompose.match(/replace-with-random-postgres-password/g)?.length,
@@ -45,6 +46,8 @@ assert.match(config, /store_model_in_db: true/);
 assert.match(config, /coordination_redis:/);
 assert.match(config, /redis_host: os\.environ\/REDIS_HOST/);
 assert.match(config, /callbacks: \/app\/call_id_hook\.proxy_handler_instance/);
+assert.match(config, /reasoning_auto_summary: true/);
+assert.match(compose, /LITELLM_REASONING_AUTO_SUMMARY: "True"/);
 assert.match(dockerfile, /COPY call_id_hook\.py \/app\/call_id_hook\.py/);
 assert.match(config, /enable_pre_call_checks: true/);
 assert.doesNotMatch(config, /fallbacks:/);
