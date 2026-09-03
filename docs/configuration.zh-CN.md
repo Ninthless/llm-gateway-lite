@@ -4,7 +4,7 @@
 
 本文档以当前生产环境为准，覆盖雨云 RCA 云应用部署、云端运维、本地 Docker 测试、LiteLLM 后台、上游模型、Virtual Key、Cursor 接入、完整能力验证、备份升级和已知问题。
 
-当前生产部署使用雨云 RCA 云应用，LiteLLM 镜像由 GitHub Container Registry 提供，数据库使用 PostgreSQL。镜像内部固定 LiteLLM Proxy `v1.98.0-rc.1`。升级时先改 `litellm/Dockerfile` 中的固定版本，通过 CI 发布后再部署。
+当前生产部署使用雨云 RCA 云应用，LiteLLM 镜像由 GitHub Container Registry 提供，数据库使用 PostgreSQL。镜像内部固定 LiteLLM Proxy `v1.99.1`。升级时先改 `litellm/Dockerfile` 中的固定版本，通过 CI 发布后再部署。
 
 ## 1. 架构、端口与资源
 

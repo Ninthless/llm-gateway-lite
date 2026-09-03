@@ -3,7 +3,7 @@ services:
     build:
       context: ./litellm
       args:
-        LITELLM_VERSION: ${LITELLM_VERSION:-v1.97.0}
+        LITELLM_VERSION: ${LITELLM_VERSION:-v1.99.1}
     ports:
       - "127.0.0.1:3029:4000"
     environment:

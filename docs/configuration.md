@@ -4,7 +4,7 @@
 
 This document matches the current production environment and covers Rainyun RCA cloud-app deploy, cloud ops, local Docker testing, LiteLLM admin UI, upstream models, Virtual Keys, Cursor setup, full capability verification, backup/upgrade, and known issues.
 
-The current production deployment uses Rainyun RCA cloud apps. The LiteLLM image is provided by GitHub Container Registry, and the database is PostgreSQL. The image pins LiteLLM Proxy `v1.98.0-rc.1`. To upgrade, first change the pinned version in `litellm/Dockerfile`, publish through CI, then deploy.
+The current production deployment uses Rainyun RCA cloud apps. The LiteLLM image is provided by GitHub Container Registry, and the database is PostgreSQL. The image pins LiteLLM Proxy `v1.99.1`. To upgrade, first change the pinned version in `litellm/Dockerfile`, publish through CI, then deploy.
 
 ## 1. Architecture, Ports, and Resources
 

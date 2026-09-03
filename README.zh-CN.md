@@ -8,7 +8,7 @@ Cursor 的 Bring Your Own Key 走 OpenAI 兼容协议。LiteLLM 已经能对接 
 
 [![CI](https://github.com/Ninthless/llm-gateway-lite/actions/workflows/ci.yml/badge.svg)](https://github.com/Ninthless/llm-gateway-lite/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![LiteLLM](https://img.shields.io/badge/LiteLLM-v1.98.0--rc.1-1B4DFF.svg)](https://docs.litellm.ai)
+[![LiteLLM](https://img.shields.io/badge/LiteLLM-v1.99.1-1B4DFF.svg)](https://docs.litellm.ai)
 [![Cursor](https://img.shields.io/badge/Cursor-BYOK-000.svg)](https://docs.litellm.ai/docs/tutorials/cursor_integration)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED.svg)](https://docs.docker.com/compose/)
 
@@ -47,7 +47,7 @@ flowchart LR
 | `db` | PostgreSQL，保存模型、凭据、Virtual Key、预算和用量 |
 | `redis` | 路由协调和 fallback |
 
-镜像固定 LiteLLM `v1.98.0-rc.1`（Agent 模式需要 `v1.97.0+`）。模型在后台入库（`store_model_in_db: true`）。`call_id_hook.py` 在进路由器之前整理 Cursor 消息形状和 Responses 兼容字段。
+镜像固定 LiteLLM `v1.99.1`（Agent 模式需要 `v1.97.0+`）。模型在后台入库（`store_model_in_db: true`）。`call_id_hook.py` 在进路由器之前整理 Cursor 消息形状和 Responses 兼容字段。
 
 Cursor 对自定义 Key 的模式和模型有自己的开关，实际覆盖以 Cursor 为准。给 Cursor 用公网 HTTPS；`localhost` 用来启动和自测网关。
 

@@ -4,7 +4,7 @@
 
 この文書は現行の本番環境に合わせ、Rainyun RCA クラウドアプリ展開、クラウド運用、ローカル Docker テスト、LiteLLM 管理 UI、上流モデル、Virtual Key、Cursor 接続、能力検証、バックアップ／アップグレード、既知の問題を扱う。
 
-現行の本番展開は Rainyun RCA クラウドアプリです。LiteLLM イメージは GitHub Container Registry から提供し、データベースは PostgreSQL です。イメージ内部では LiteLLM Proxy `v1.98.0-rc.1` を固定しています。アップグレードでは、先に `litellm/Dockerfile` の固定バージョンを変更し、CI で公開してからデプロイします。
+現行の本番展開は Rainyun RCA クラウドアプリです。LiteLLM イメージは GitHub Container Registry から提供し、データベースは PostgreSQL です。イメージ内部では LiteLLM Proxy `v1.99.1` を固定しています。アップグレードでは、先に `litellm/Dockerfile` の固定バージョンを変更し、CI で公開してからデプロイします。
 
 ## 1. アーキテクチャ、ポート、リソース
 

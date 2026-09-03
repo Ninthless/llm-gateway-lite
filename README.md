@@ -8,7 +8,7 @@ Cursor's Bring Your Own Key path speaks OpenAI. LiteLLM already speaks [100+ pro
 
 [![CI](https://github.com/Ninthless/llm-gateway-lite/actions/workflows/ci.yml/badge.svg)](https://github.com/Ninthless/llm-gateway-lite/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![LiteLLM](https://img.shields.io/badge/LiteLLM-v1.98.0--rc.1-1B4DFF.svg)](https://docs.litellm.ai)
+[![LiteLLM](https://img.shields.io/badge/LiteLLM-v1.99.1-1B4DFF.svg)](https://docs.litellm.ai)
 [![Cursor](https://img.shields.io/badge/Cursor-BYOK-000.svg)](https://docs.litellm.ai/docs/tutorials/cursor_integration)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED.svg)](https://docs.docker.com/compose/)
 
@@ -47,7 +47,7 @@ The local stack is three containers:
 | `db` | PostgreSQL for models, credentials, Virtual Keys, budgets, usage |
 | `redis` | Routing coordination and fallbacks |
 
-The image pins LiteLLM `v1.98.0-rc.1` (Agent mode needs `v1.97.0+`). Models live in the database (`store_model_in_db: true`). `call_id_hook.py` normalizes Cursor message shapes and Responses-compatible payloads before they hit the router.
+The image pins LiteLLM `v1.99.1` (Agent mode needs `v1.97.0+`). Models live in the database (`store_model_in_db: true`). `call_id_hook.py` normalizes Cursor message shapes and Responses-compatible payloads before they hit the router.
 
 Cursor coverage follows what Cursor enables for custom API keys. Use a public HTTPS URL Cursor's servers can reach; `localhost` is for running and testing the gateway itself.
 

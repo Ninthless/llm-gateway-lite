@@ -37,7 +37,8 @@ assert.equal(
   rainyunCompose.match(/replace-with-random-postgres-password/g)?.length,
   2,
 );
-assert.match(dockerfile, /ARG LITELLM_VERSION=v1\.98\.0-rc\.1/);
+assert.match(dockerfile, /ARG LITELLM_VERSION=v1\.99\.1/);
+assert.match(compose, /LITELLM_VERSION: \$\{LITELLM_VERSION:-v1\.99\.1\}/);
 assert.match(dockerfile, /litellm-database:\$\{LITELLM_VERSION\}/);
 assert.match(dockerfile, /"--num_workers", "1"/);
 assert.match(config, /store_model_in_db: true/);

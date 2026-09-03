@@ -8,7 +8,7 @@ Cursor の Bring Your Own Key は OpenAI 互換です。LiteLLM はすでに [10
 
 [![CI](https://github.com/Ninthless/llm-gateway-lite/actions/workflows/ci.yml/badge.svg)](https://github.com/Ninthless/llm-gateway-lite/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![LiteLLM](https://img.shields.io/badge/LiteLLM-v1.98.0--rc.1-1B4DFF.svg)](https://docs.litellm.ai)
+[![LiteLLM](https://img.shields.io/badge/LiteLLM-v1.99.1-1B4DFF.svg)](https://docs.litellm.ai)
 [![Cursor](https://img.shields.io/badge/Cursor-BYOK-000.svg)](https://docs.litellm.ai/docs/tutorials/cursor_integration)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED.svg)](https://docs.docker.com/compose/)
 
@@ -47,7 +47,7 @@ flowchart LR
 | `db` | モデル、資格情報、Virtual Key、予算、利用量を持つ PostgreSQL |
 | `redis` | ルーティング協調と fallback |
 
-イメージは LiteLLM `v1.98.0-rc.1` を固定しています（Agent モードは `v1.97.0+`）。モデルは DB に入ります（`store_model_in_db: true`）。`call_id_hook.py` はルータ前に Cursor のメッセージ形状と Responses 互換フィールドを整えます。
+イメージは LiteLLM `v1.99.1` を固定しています（Agent モードは `v1.97.0+`）。モデルは DB に入ります（`store_model_in_db: true`）。`call_id_hook.py` はルータ前に Cursor のメッセージ形状と Responses 互換フィールドを整えます。
 
 カスタムキーで使えるモードとモデルは Cursor 側の制限に従います。Cursor には公開 HTTPS を渡してください。`localhost` はゲートウェイの起動と自己テスト用です。
 
