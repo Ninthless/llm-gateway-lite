@@ -16,6 +16,7 @@ jobs:
         with:
           node-version: 24
       - run: node tests/check-static.mjs
+      - run: python3 tests/check-call-id-hook.py
       - run: docker build -t llm-gateway-lite ./litellm
       - run: cp .env.example .env
       - run: docker compose config --quiet

@@ -50,7 +50,7 @@ def _tool_result_to_text(content: Any) -> str:
     if isinstance(content, list):
         parts = []
         for item in content:
-            if isinstance(item, dict) and item.get("type") == "text":
+            if isinstance(item, dict) and item.get("type") in {"text", "input_text"}:
                 parts.append(item.get("text") or "")
             elif isinstance(item, str):
                 parts.append(item)
@@ -64,17 +64,31 @@ def _tool_result_to_text(content: Any) -> str:
     return str(content)
 
 
+def _tool_message(item: dict) -> dict:
+    return {
+        "role": "tool",
+        "tool_call_id": item.get("tool_use_id") or item.get("id") or "tool",
+        "content": _tool_result_to_text(item.get("content")),
+    }
+
+
 def _normalize_cursor_messages(messages: list) -> list:
     out = []
+    mutated = False
     for msg in messages:
-        if not isinstance(msg, dict):
+        if not isinstance(msg, dict) or msg.get("role") != "user":
             out.append(msg)
             continue
         content = msg.get("content")
-        if msg.get("role") != "user":
-            out.append(msg)
-            continue
         if isinstance(content, dict):
+            if content.get("type") == "tool_result":
+                mutated = True
+                out.append(_tool_message(content))
+                continue
+            if content.get("type"):
+                out.append(msg)
+                continue
+            mutated = True
             new_msg = dict(msg)
             new_msg["content"] = _tool_result_to_text(content)
             out.append(new_msg)
@@ -85,23 +99,15 @@ def _normalize_cursor_messages(messages: list) -> list:
 
         tool_msgs = []
         kept = []
-        changed = False
+        part_changed = False
         for item in content:
             if isinstance(item, dict) and item.get("type") == "tool_result":
-                changed = True
-                tool_msgs.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": item.get("tool_use_id")
-                        or item.get("id")
-                        or "tool",
-                        "content": _tool_result_to_text(item.get("content")),
-                    }
-                )
-            elif isinstance(item, dict) and item.get("type") == "text":
-                kept.append(item)
+                part_changed = True
+                tool_msgs.append(_tool_message(item))
             elif isinstance(item, str):
                 kept.append({"type": "text", "text": item})
+            elif isinstance(item, dict):
+                kept.append(item)
             else:
                 kept.append(
                     {
@@ -109,12 +115,13 @@ def _normalize_cursor_messages(messages: list) -> list:
                         "text": _tool_result_to_text(item),
                     }
                 )
-                changed = True
+                part_changed = True
 
-        if not changed:
+        if not part_changed:
             out.append(msg)
             continue
 
+        mutated = True
         out.extend(tool_msgs)
         if not kept:
             continue
@@ -128,7 +135,7 @@ def _normalize_cursor_messages(messages: list) -> list:
         new_msg = dict(msg)
         new_msg["content"] = kept
         out.append(new_msg)
-    return out
+    return out if mutated else messages
 
 
 class CallIdSanitizer(CustomLogger):
@@ -148,29 +155,31 @@ class CallIdSanitizer(CustomLogger):
             "rerank",
         ],
     ) -> Optional[Union[Exception, str, dict]]:
-        messages = data.get("messages") or []
-        if isinstance(messages, list):
-            messages = _normalize_cursor_messages(messages)
-
-        changed = False
-        for msg in messages:
-            if not isinstance(msg, dict):
+        for key in ("messages", "input"):
+            value = data.get(key)
+            if not isinstance(value, list):
                 continue
-            tool_calls = msg.get("tool_calls") or []
-            for tc in tool_calls:
-                if isinstance(tc, dict) and isinstance(tc.get("id"), str):
-                    new_id = _truncate(tc["id"])
-                    if new_id != tc["id"]:
-                        tc["id"] = new_id
-                        changed = True
-            call_id = msg.get("tool_call_id")
-            if isinstance(call_id, str):
-                new_id = _truncate(call_id)
-                if new_id != call_id:
-                    msg["tool_call_id"] = new_id
-                    changed = True
-        if changed or messages is not data.get("messages"):
-            data["messages"] = messages
+            messages = _normalize_cursor_messages(value)
+            changed = messages is not value
+            for msg in messages:
+                if not isinstance(msg, dict):
+                    continue
+                tool_calls = msg.get("tool_calls") or []
+                for tc in tool_calls:
+                    if isinstance(tc, dict) and isinstance(tc.get("id"), str):
+                        new_id = _truncate(tc["id"])
+                        if new_id != tc["id"]:
+                            tc["id"] = new_id
+                            changed = True
+                for field in ("tool_call_id", "call_id"):
+                    call_id = msg.get(field)
+                    if isinstance(call_id, str):
+                        new_id = _truncate(call_id)
+                        if new_id != call_id:
+                            msg[field] = new_id
+                            changed = True
+            if changed:
+                data[key] = messages
         return data
 
 
