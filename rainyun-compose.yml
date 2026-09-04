@@ -7,7 +7,6 @@ services:
       LITELLM_MASTER_KEY: sk-replace-with-random-master-key
       LITELLM_SALT_KEY: sk-replace-with-random-salt-key
       STORE_MODEL_IN_DB: "True"
-      LITELLM_REASONING_AUTO_SUMMARY: "True"
       NO_DOCS: "True"
       NO_REDOC: "True"
       NO_OPENAPI: "True"

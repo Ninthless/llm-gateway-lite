@@ -15,7 +15,6 @@ services:
       PROXY_ADMIN_ID: ${PROXY_ADMIN_ID:-admin}
       PROXY_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3029}
       STORE_MODEL_IN_DB: "True"
-      LITELLM_REASONING_AUTO_SUMMARY: "True"
       NO_DOCS: "True"
       NO_REDOC: "True"
       NO_OPENAPI: "True"
